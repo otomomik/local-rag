@@ -1,0 +1,16 @@
+{
+  "name": "local-rag",
+  "type": "module",
+  "scripts": {
+    "watch": "tsx src/index.ts",
+    "db:generate": "drizzle-kit generate"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.2.17",
+    "drizzle-orm": "^0.41.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.30.6",
+    "tsx": "^4.19.3"
+  }
+}
