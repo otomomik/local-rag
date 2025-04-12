@@ -3,14 +3,18 @@
   "type": "module",
   "scripts": {
     "watch": "tsx src/index.ts",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "fmt": "prettier --write ."
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
+    "chokidar": "^4.0.3",
     "drizzle-orm": "^0.41.0"
   },
   "devDependencies": {
+    "@types/node": "^22.14.1",
     "drizzle-kit": "^0.30.6",
+    "prettier": "^3.5.3",
     "tsx": "^4.19.3"
   }
 }
