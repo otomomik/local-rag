@@ -9,6 +9,7 @@ import { createHash } from "crypto";
 import fs from "fs/promises";
 import { and, eq } from "drizzle-orm";
 import { LMStudioClient } from "@lmstudio/sdk";
+import { fileTypeFromBuffer } from "file-type";
 
 // init
 const baseDir = process.argv[2];
@@ -47,6 +48,7 @@ export const filesTable = pgTable(
     contentVector: vector("content_vector", {
       dimensions: 1024,
     }).notNull(),
+    fileType: text("file_type").notNull(),
   },
   (t) => [
     primaryKey({
@@ -74,6 +76,21 @@ const getHash = (filePath: string): string => {
   return createHash("sha256").update(filePath).digest("hex");
 };
 
+type FileType = "image" | "video" | "audio" | "pdf" | "text" | "other";
+
+const detectFileType = async (buffer: Buffer): Promise<FileType> => {
+  const fileType = await fileTypeFromBuffer(buffer.slice(0, 1024));
+  if (!fileType) return "other";
+
+  const mime = fileType.mime;
+  if (mime.startsWith("image/")) return "image";
+  if (mime.startsWith("video/")) return "video";
+  if (mime.startsWith("audio/")) return "audio";
+  if (mime === "application/pdf") return "pdf";
+  if (mime.startsWith("text/") || mime === "application/json") return "text";
+  return "other";
+};
+
 const updateFile = async ({
   parentHash,
   absolutePath,
@@ -86,7 +103,9 @@ const updateFile = async ({
   logPrefix: string;
 }) => {
   console.log(`[${logPrefix}] ${relativePath}`);
-  const fileContent = await fs.readFile(absolutePath, "utf8");
+  const fileBuffer = await fs.readFile(absolutePath);
+  const fileType = await detectFileType(fileBuffer);
+  const fileContent = fileBuffer.toString("utf8");
   const fileHash = createHash("sha256").update(fileContent).digest("hex");
   const [existingFile] = await dbClient
     .select()
@@ -113,6 +132,7 @@ const updateFile = async ({
       contentHash: fileHash,
       content: fileContent,
       contentVector,
+      fileType,
     })
     .onConflictDoUpdate({
       target: [filesTable.parentHash, filesTable.path],
@@ -120,6 +140,7 @@ const updateFile = async ({
         contentHash: fileHash,
         content: fileContent,
         contentVector,
+        fileType,
       },
       setWhere: and(
         eq(filesTable.parentHash, parentHash),
