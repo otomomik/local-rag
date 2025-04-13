@@ -79,7 +79,7 @@ const getHash = (filePath: string): string => {
 type FileType = "image" | "video" | "audio" | "pdf" | "text" | "other";
 
 interface FileProcessor {
-  getContent: (buffer: Buffer) => Promise<string>;
+  getContent: (buffer: Buffer, fileName: string) => Promise<string>;
   getEmbedding: (content: string) => Promise<number[]>;
 }
 
@@ -99,6 +99,7 @@ const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   if (mime.startsWith("text/") || mime === "application/json") return "text";
   return "other";
 };
+
 const fileProcessors: FileProcessors = {
   text: {
     getContent: async (buffer: Buffer) => buffer.toString("utf8"),
@@ -120,9 +121,26 @@ const fileProcessors: FileProcessors = {
     },
   },
   image: {
-    getContent: async (buffer: Buffer) => {
-      // TODO: Implement image description/OCR
-      return "image content";
+    getContent: async (buffer, fileName) => {
+      const model = await lmstudio.llm.model("gemma-3-27b-it");
+      const imageBase64 = buffer.toString("base64");
+      const image = await lmstudio.files.prepareImageBase64(
+        fileName,
+        imageBase64,
+      );
+      const { content } = await model.respond([
+        {
+          role: "system",
+          content:
+            "あなたは画像を説明するAIです。画像の特徴と内容を詳細に説明してください。\n画像には・この画像は・〇〇と言えるでしょうなど不要なものは出力せず、あくまで画像の特徴と内容を説明してください。",
+        },
+        {
+          role: "user",
+          images: [image],
+        },
+      ]);
+      console.log(content);
+      return content;
     },
     getEmbedding: async (content: string) => {
       const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
@@ -162,19 +180,47 @@ const fileProcessors: FileProcessors = {
   },
 };
 
-const updateFile = async ({
-  parentHash,
-  absolutePath,
-  relativePath,
-  logPrefix,
-}: {
+interface QueueItem {
   parentHash: string;
   absolutePath: string;
   relativePath: string;
-  logPrefix: string;
+  type: "add" | "change" | "unlink";
+}
+
+const fileQueue: QueueItem[] = [];
+let isProcessing = false;
+
+const processQueue = async () => {
+  if (isProcessing || fileQueue.length === 0) return;
+  
+  isProcessing = true;
+  try {
+    const item = fileQueue.shift();
+    if (!item) return;
+
+    const { parentHash, absolutePath, relativePath, type } = item;
+
+    if (type === "add") {
+      await addFile({ parentHash, absolutePath, relativePath });
+    } else if (type === "change") {
+      await changeFile({ parentHash, absolutePath, relativePath });
+    } else if (type === "unlink") {
+      await removeFile({ parentHash, absolutePath, relativePath });
+    }
+  } finally {
+    isProcessing = false;
+    // 再帰的に次の処理を実行
+    processQueue();
+  }
+};
+
+const addFile = async (params: {
+  parentHash: string;
+  absolutePath: string;
+  relativePath: string;
 }) => {
-  console.log(`[${logPrefix}] ${relativePath}`);
-  const fileBuffer = await fs.readFile(absolutePath);
+  console.log(`[ADD] ${params.relativePath}`);
+  const fileBuffer = await fs.readFile(params.absolutePath);
   const fileType = await detectFileType(fileBuffer);
   const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
 
@@ -183,52 +229,46 @@ const updateFile = async ({
     .from(filesTable)
     .where(
       and(
-        eq(filesTable.parentHash, parentHash),
-        eq(filesTable.path, relativePath),
+        eq(filesTable.parentHash, params.parentHash),
+        eq(filesTable.path, params.relativePath),
         eq(filesTable.contentHash, fileHash),
       ),
     );
 
   if (existingFile) {
-    console.log(`[SKIP] ${relativePath}`);
-    return;
-  }
+    console.log(`[SKIP] ${params.relativePath}`);
+  } else {
+    const processor = fileProcessors[fileType];
+    const fileContent = await processor.getContent(
+      fileBuffer,
+      path.basename(params.absolutePath),
+    );
+    const contentVector = await processor.getEmbedding(fileContent);
 
-  const processor = fileProcessors[fileType];
-  const fileContent = await processor.getContent(fileBuffer);
-  const contentVector = await processor.getEmbedding(fileContent);
-
-  await dbClient
-    .insert(filesTable)
-    .values({
-      parentHash,
-      path: relativePath,
-      contentHash: fileHash,
-      content: fileContent,
-      contentVector,
-      fileType,
-    })
-    .onConflictDoUpdate({
-      target: [filesTable.parentHash, filesTable.path],
-      set: {
+    await dbClient
+      .insert(filesTable)
+      .values({
+        parentHash: params.parentHash,
+        path: params.relativePath,
         contentHash: fileHash,
         content: fileContent,
         contentVector,
         fileType,
-      },
-      setWhere: and(
-        eq(filesTable.parentHash, parentHash),
-        eq(filesTable.path, relativePath),
-      ),
-    });
-};
-
-const addFile = async (params: {
-  parentHash: string;
-  absolutePath: string;
-  relativePath: string;
-}) => {
-  await updateFile({ ...params, logPrefix: "ADD" });
+      })
+      .onConflictDoUpdate({
+        target: [filesTable.parentHash, filesTable.path],
+        set: {
+          contentHash: fileHash,
+          content: fileContent,
+          contentVector,
+          fileType,
+        },
+        setWhere: and(
+          eq(filesTable.parentHash, params.parentHash),
+          eq(filesTable.path, params.relativePath),
+        ),
+      });
+  }
 };
 
 const changeFile = async (params: {
@@ -236,26 +276,80 @@ const changeFile = async (params: {
   absolutePath: string;
   relativePath: string;
 }) => {
-  await updateFile({ ...params, logPrefix: "CHANGE" });
+  console.log(`[CHANGE] ${params.relativePath}`);
+  const fileBuffer = await fs.readFile(params.absolutePath);
+  const fileType = await detectFileType(fileBuffer);
+  const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
+
+  const [existingFile] = await dbClient
+    .select()
+    .from(filesTable)
+    .where(
+      and(
+        eq(filesTable.parentHash, params.parentHash),
+        eq(filesTable.path, params.relativePath),
+        eq(filesTable.contentHash, fileHash),
+      ),
+    );
+
+  if (existingFile) {
+    console.log(`[SKIP] ${params.relativePath}`);
+  } else {
+    const processor = fileProcessors[fileType];
+    const fileContent = await processor.getContent(
+      fileBuffer,
+      path.basename(params.absolutePath),
+    );
+    const contentVector = await processor.getEmbedding(fileContent);
+
+    await dbClient
+      .insert(filesTable)
+      .values({
+        parentHash: params.parentHash,
+        path: params.relativePath,
+        contentHash: fileHash,
+        content: fileContent,
+        contentVector,
+        fileType,
+      })
+      .onConflictDoUpdate({
+        target: [filesTable.parentHash, filesTable.path],
+        set: {
+          contentHash: fileHash,
+          content: fileContent,
+          contentVector,
+          fileType,
+        },
+        setWhere: and(
+          eq(filesTable.parentHash, params.parentHash),
+          eq(filesTable.path, params.relativePath),
+        ),
+      });
+  }
 };
 
-const removeFile = async ({
-  parentHash,
-  absolutePath,
-  relativePath,
-}: {
+const removeFile = async (params: {
   parentHash: string;
   absolutePath: string;
   relativePath: string;
 }) => {
-  console.log(`[REMOVE] ${relativePath}`);
-
+  console.log(`[REMOVE] ${params.relativePath}`);
   await dbClient
     .delete(filesTable)
     .where(
-      eq(filesTable.parentHash, parentHash) &&
-        eq(filesTable.path, relativePath),
+      eq(filesTable.parentHash, params.parentHash) &&
+        eq(filesTable.path, params.relativePath),
     );
+};
+
+const queueFile = (params: {
+  parentHash: string;
+  absolutePath: string;
+  relativePath: string;
+  type: "add" | "change" | "unlink";
+}) => {
+  fileQueue.push(params);
+  processQueue();
 };
 
 // main
@@ -274,15 +368,15 @@ const main = async () => {
   watcher
     .on("add", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
-      await addFile({ parentHash, absolutePath, relativePath });
+      queueFile({ parentHash, absolutePath, relativePath, type: "add" });
     })
     .on("change", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
-      await changeFile({ parentHash, absolutePath, relativePath });
+      queueFile({ parentHash, absolutePath, relativePath, type: "change" });
     })
     .on("unlink", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
-      await removeFile({ parentHash, absolutePath, relativePath });
+      queueFile({ parentHash, absolutePath, relativePath, type: "unlink" });
     });
 };
 
