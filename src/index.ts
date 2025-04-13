@@ -78,6 +78,15 @@ const getHash = (filePath: string): string => {
 
 type FileType = "image" | "video" | "audio" | "pdf" | "text" | "other";
 
+interface FileProcessor {
+  getContent: (buffer: Buffer) => Promise<string>;
+  getEmbedding: (content: string) => Promise<number[]>;
+}
+
+interface FileProcessors {
+  [key: string]: FileProcessor;
+}
+
 const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   const fileType = await fileTypeFromBuffer(buffer.slice(0, 1024));
   if (!fileType) return "other";
@@ -89,6 +98,68 @@ const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   if (mime === "application/pdf") return "pdf";
   if (mime.startsWith("text/") || mime === "application/json") return "text";
   return "other";
+};
+const fileProcessors: FileProcessors = {
+  text: {
+    getContent: async (buffer: Buffer) => buffer.toString("utf8"),
+    getEmbedding: async (content: string) => {
+      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
+      const { embedding } = await model.embed(content);
+      return embedding;
+    },
+  },
+  pdf: {
+    getContent: async (buffer: Buffer) => {
+      // TODO: Implement PDF text extraction
+      return buffer.toString("utf8");
+    },
+    getEmbedding: async (content: string) => {
+      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
+      const { embedding } = await model.embed(content);
+      return embedding;
+    },
+  },
+  image: {
+    getContent: async (buffer: Buffer) => {
+      // TODO: Implement image description/OCR
+      return "image content";
+    },
+    getEmbedding: async (content: string) => {
+      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
+      const { embedding } = await model.embed(content);
+      return embedding;
+    },
+  },
+  video: {
+    getContent: async (buffer: Buffer) => {
+      // TODO: Implement video metadata/frame extraction
+      return "video content";
+    },
+    getEmbedding: async (content: string) => {
+      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
+      const { embedding } = await model.embed(content);
+      return embedding;
+    },
+  },
+  audio: {
+    getContent: async (buffer: Buffer) => {
+      // TODO: Implement audio transcription
+      return "audio content";
+    },
+    getEmbedding: async (content: string) => {
+      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
+      const { embedding } = await model.embed(content);
+      return embedding;
+    },
+  },
+  other: {
+    getContent: async (buffer: Buffer) => buffer.toString("utf8"),
+    getEmbedding: async (content: string) => {
+      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
+      const { embedding } = await model.embed(content);
+      return embedding;
+    },
+  },
 };
 
 const updateFile = async ({
@@ -105,8 +176,8 @@ const updateFile = async ({
   console.log(`[${logPrefix}] ${relativePath}`);
   const fileBuffer = await fs.readFile(absolutePath);
   const fileType = await detectFileType(fileBuffer);
-  const fileContent = fileBuffer.toString("utf8");
-  const fileHash = createHash("sha256").update(fileContent).digest("hex");
+  const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
+
   const [existingFile] = await dbClient
     .select()
     .from(filesTable)
@@ -123,7 +194,10 @@ const updateFile = async ({
     return;
   }
 
-  const contentVector = await getEmbedding(fileContent);
+  const processor = fileProcessors[fileType];
+  const fileContent = await processor.getContent(fileBuffer);
+  const contentVector = await processor.getEmbedding(fileContent);
+
   await dbClient
     .insert(filesTable)
     .values({

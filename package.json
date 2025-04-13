@@ -11,7 +11,8 @@
     "@electric-sql/pglite": "^0.2.17",
     "@lmstudio/sdk": "^1.1.0",
     "chokidar": "^4.0.3",
-    "drizzle-orm": "^0.41.0"
+    "drizzle-orm": "^0.41.0",
+    "file-type": "^20.4.1"
   },
   "devDependencies": {
     "@types/node": "^22.14.1",

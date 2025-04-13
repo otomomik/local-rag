@@ -61,10 +61,7 @@
       "compositePrimaryKeys": {
         "files_parent_hash_path_pk": {
           "name": "files_parent_hash_path_pk",
-          "columns": [
-            "parent_hash",
-            "path"
-          ]
+          "columns": ["parent_hash", "path"]
         }
       },
       "uniqueConstraints": {},
