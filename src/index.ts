@@ -7,7 +7,8 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createHash } from "crypto";
 import fs from "fs/promises";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { LMStudioClient } from "@lmstudio/sdk";
 
 // init
 const baseDir = process.argv[2];
@@ -19,6 +20,15 @@ const pglite = new PGlite({
   extensions: { vector: pgVector },
 });
 const dbClient = drizzle(pglite);
+
+// lmstudio
+const lmstudio = new LMStudioClient();
+
+const getEmbedding = async (text: string): Promise<number[]> => {
+  const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
+  const { embedding } = await model.embed(text);
+  return embedding;
+};
 
 export const runMigration = async () => {
   await dbClient.execute("CREATE EXTENSION IF NOT EXISTS vector");
@@ -60,6 +70,10 @@ const shouldIgnoreFile = (filePath: string): boolean => {
   );
 };
 
+const getHash = (filePath: string): string => {
+  return createHash("sha256").update(filePath).digest("hex");
+};
+
 const addFile = async ({
   parentHash,
   absolutePath,
@@ -71,23 +85,48 @@ const addFile = async ({
 }) => {
   console.log(`[ADD] ${relativePath}`);
   const fileContent = await fs.readFile(absolutePath, "utf8");
-  console.log(fileContent);
   const fileHash = createHash("sha256").update(fileContent).digest("hex");
+  const [existingFile] = await dbClient
+    .select()
+    .from(filesTable)
+    .where(
+      and(
+        eq(filesTable.parentHash, parentHash),
+        eq(filesTable.path, relativePath),
+        eq(filesTable.contentHash, fileHash),
+      ),
+    );
 
-  await dbClient.insert(filesTable).values({
-    parentHash,
-    path: relativePath,
-    contentHash: fileHash,
-    content: fileContent,
-    contentVector: Array(1024).fill(0),
-  });
+  if (existingFile) {
+    console.log(`[SKIP] ${relativePath}`);
+    return;
+  }
+
+  const contentVector = await getEmbedding(fileContent);
+  await dbClient
+    .insert(filesTable)
+    .values({
+      parentHash,
+      path: relativePath,
+      contentHash: fileHash,
+      content: fileContent,
+      contentVector,
+    })
+    .onConflictDoUpdate({
+      target: [filesTable.parentHash, filesTable.path],
+      set: {
+        contentHash: fileHash,
+        content: fileContent,
+        contentVector,
+      },
+      setWhere: and(
+        eq(filesTable.parentHash, parentHash),
+        eq(filesTable.path, relativePath),
+      ),
+    });
 };
 
-const getHash = (filePath: string): string => {
-  return createHash("sha256").update(filePath).digest("hex");
-};
-
-const checkFile = async ({
+const changeFile = async ({
   parentHash,
   absolutePath,
   relativePath,
@@ -96,12 +135,66 @@ const checkFile = async ({
   absolutePath: string;
   relativePath: string;
 }) => {
-  console.log(
-    await dbClient
-      .select()
-      .from(filesTable)
-      .where(eq(filesTable.parentHash, parentHash)),
-  );
+  console.log(`[ADD] $V{relativePath}`);
+  const fileContent = await fs.readFile(absolutePath, "utf8");
+  const fileHash = createHash("sha256").update(fileContent).digest("hex");
+  const [existingFile] = await dbClient
+    .select()
+    .from(filesTable)
+    .where(
+      and(
+        eq(filesTable.parentHash, parentHash),
+        eq(filesTable.path, relativePath),
+        eq(filesTable.contentHash, fileHash),
+      ),
+    );
+
+  if (existingFile) {
+    console.log(`[SKIP] ${relativePath}`);
+    return;
+  }
+
+  const contentVector = await getEmbedding(fileContent);
+  await dbClient
+    .insert(filesTable)
+    .values({
+      parentHash,
+      path: relativePath,
+      contentHash: fileHash,
+      content: fileContent,
+      contentVector,
+    })
+    .onConflictDoUpdate({
+      target: [filesTable.parentHash, filesTable.path],
+      set: {
+        contentHash: fileHash,
+        content: fileContent,
+        contentVector,
+      },
+      setWhere: and(
+        eq(filesTable.parentHash, parentHash),
+        eq(filesTable.path, relativePath),
+      ),
+    });
+};
+
+const removeFile = async ({
+  parentHash,
+  absolutePath,
+  relativePath,
+}: {
+  parentHash: string;
+  absolutePath: string;
+  relativePath: string;
+}) => {
+  console.log(`[REMOVE] ${relativePath}`);
+
+  await dbClient
+    .delete(filesTable)
+    .where(
+      eq(filesTable.parentHash, parentHash) &&
+        eq(filesTable.path, relativePath),
+    );
 };
 
 // main
@@ -118,17 +211,18 @@ const main = async () => {
   const parentHash = getHash(watchDir);
 
   watcher
-    .on("add", (absolutePath) => {
+    .on("add", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
-      addFile({ parentHash, absolutePath, relativePath });
+      await addFile({ parentHash, absolutePath, relativePath });
     })
-    .on("change", (absolutePath) => {
+    .on("change", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
-      checkFile({ parentHash, absolutePath, relativePath });
+      await changeFile({ parentHash, absolutePath, relativePath });
     })
-    .on("unlink", (absolutePath) =>
-      console.log(`[UNLINK] ${absolutePath.slice(watchDir.length + 1)}`),
-    );
+    .on("unlink", async (absolutePath) => {
+      const relativePath = absolutePath.slice(watchDir.length + 1);
+      await removeFile({ parentHash, absolutePath, relativePath });
+    });
 };
 
 if (!!baseDir && !!targetDir) {
