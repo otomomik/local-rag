@@ -74,16 +74,18 @@ const getHash = (filePath: string): string => {
   return createHash("sha256").update(filePath).digest("hex");
 };
 
-const addFile = async ({
+const updateFile = async ({
   parentHash,
   absolutePath,
   relativePath,
+  logPrefix,
 }: {
   parentHash: string;
   absolutePath: string;
   relativePath: string;
+  logPrefix: string;
 }) => {
-  console.log(`[ADD] ${relativePath}`);
+  console.log(`[${logPrefix}] ${relativePath}`);
   const fileContent = await fs.readFile(absolutePath, "utf8");
   const fileHash = createHash("sha256").update(fileContent).digest("hex");
   const [existingFile] = await dbClient
@@ -126,56 +128,20 @@ const addFile = async ({
     });
 };
 
-const changeFile = async ({
-  parentHash,
-  absolutePath,
-  relativePath,
-}: {
+const addFile = async (params: {
   parentHash: string;
   absolutePath: string;
   relativePath: string;
 }) => {
-  console.log(`[ADD] $V{relativePath}`);
-  const fileContent = await fs.readFile(absolutePath, "utf8");
-  const fileHash = createHash("sha256").update(fileContent).digest("hex");
-  const [existingFile] = await dbClient
-    .select()
-    .from(filesTable)
-    .where(
-      and(
-        eq(filesTable.parentHash, parentHash),
-        eq(filesTable.path, relativePath),
-        eq(filesTable.contentHash, fileHash),
-      ),
-    );
+  await updateFile({ ...params, logPrefix: "ADD" });
+};
 
-  if (existingFile) {
-    console.log(`[SKIP] ${relativePath}`);
-    return;
-  }
-
-  const contentVector = await getEmbedding(fileContent);
-  await dbClient
-    .insert(filesTable)
-    .values({
-      parentHash,
-      path: relativePath,
-      contentHash: fileHash,
-      content: fileContent,
-      contentVector,
-    })
-    .onConflictDoUpdate({
-      target: [filesTable.parentHash, filesTable.path],
-      set: {
-        contentHash: fileHash,
-        content: fileContent,
-        contentVector,
-      },
-      setWhere: and(
-        eq(filesTable.parentHash, parentHash),
-        eq(filesTable.path, relativePath),
-      ),
-    });
+const changeFile = async (params: {
+  parentHash: string;
+  absolutePath: string;
+  relativePath: string;
+}) => {
+  await updateFile({ ...params, logPrefix: "CHANGE" });
 };
 
 const removeFile = async ({
