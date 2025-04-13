@@ -1,5 +1,5 @@
 {
-  "id": "8862201b-a05b-4f0f-ba5a-277ff3753670",
+  "id": "e0e561fc-c3e0-4e45-a9cc-53c57c4046d8",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -8,10 +8,22 @@
       "name": "files",
       "schema": "",
       "columns": {
+        "parent_hash": {
+          "name": "parent_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
         "path": {
           "name": "path",
           "type": "text",
-          "primaryKey": true,
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
           "notNull": true
         },
         "content": {
@@ -19,11 +31,42 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "content_vector": {
+          "name": "content_vector",
+          "type": "vector(1024)",
+          "primaryKey": false,
+          "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "content_vector_index": {
+          "name": "content_vector_index",
+          "columns": [
+            {
+              "expression": "content_vector",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "vector_cosine_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "hnsw",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
+      "compositePrimaryKeys": {
+        "files_parent_hash_path_pk": {
+          "name": "files_parent_hash_path_pk",
+          "columns": [
+            "parent_hash",
+            "path"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},

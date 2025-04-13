@@ -9,6 +9,18 @@ import { createHash } from "crypto";
 import fs from "fs/promises";
 import { eq } from "drizzle-orm";
 
+// Original file: src/index.ts
+import chokidar from "chokidar";
+import path from "path";
+import { index, pgTable, primaryKey, text, vector } from "drizzle-orm/pg-core";
+import { PGlite } from "@electric-sql/pglite";
+import { vector as pgVector } from "@electric-sql/pglite/vector";
+import { drizzle } from "drizzle-orm/pglite";
+import { migrate } from "drizzle-orm/pglite/migrator";
+import { createHash } from "crypto";
+import fs from "fs/promises";
+import { eq } from "drizzle-orm";
+
 // init
 const baseDir = process.argv[2];
 const targetDir = process.argv[3];
@@ -134,3 +146,4 @@ const main = async () => {
 if (!!baseDir && !!targetDir) {
   main();
 }
+
