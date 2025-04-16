@@ -421,23 +421,35 @@ const main = async () => {
     }
   })
 
-  server.tool("search-files-hybrid", "search files using vector similarity", {
+  server.tool("search-files-hybrid", "search files using both vector similarity and full-text search", {
     query: z.string(),
-  }, async ({ query }) => {
+    vectorWeight: z.number().optional().default(0.7),
+    textWeight: z.number().optional().default(0.3),
+  }, async ({ query, vectorWeight, textWeight }) => {
     const embedding = await getEmbedding(query);
     const fileColumns = getTableColumns(filesTable);
-    const files = await dbClient.select({
+    
+    const results = await dbClient.select({
       ...fileColumns,
-      similarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
+      vectorSimilarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
+      textRank: sql<number>`ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query}))`,
     }).from(filesTable).where(
       eq(filesTable.parentHash, parentHash)
-    ).orderBy(desc(cosineDistance(filesTable.contentVector, embedding)));
-
+    ).orderBy(
+      desc(
+        sql<number>`(${vectorWeight} * (${cosineDistance(filesTable.contentVector, embedding)}) + 
+                     ${textWeight} * ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query})))`
+      )
+    );
+    
     return {
       content: [
         {
           type: "text",
-          text: files.map((file) => `${file.path} (${file.similarity.toFixed(3)})`).join("\n"),
+          text: results.map((file) => {
+            const combinedScore = vectorWeight * file.vectorSimilarity + textWeight * file.textRank;
+            return `${file.path} (${combinedScore.toFixed(3)})`;
+          }).join("\n"),
         }
       ]
     }
