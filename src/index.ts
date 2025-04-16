@@ -119,19 +119,16 @@ const getEmbedding = async (
   content: string,
   modelName: string,
 ): Promise<number[]> => {
-  const inputFile = ".text-to-vector-input.txt";
-  const outputFile = ".text-to-vector-output.json";
-  const outputPrefix = ".text-to-vector";
-  await fs.writeFile(`./scripts/${inputFile}`, content);
-  await execAsync(
-    `./scripts/text-to-vector.sh ${inputFile} ${outputFile} ${modelName} ${outputPrefix}`,
+  const { stdout } = await execAsync(
+    `./scripts/text-to-vector.sh "${content}" "${modelName}"`,
   );
-  const embedding = JSON.parse(
-    await fs.readFile(`./scripts/${outputFile}`, "utf8"),
-  );
-  await fs.unlink(`./scripts/${inputFile}`);
-  await fs.unlink(`./scripts/${outputFile}`);
-  return embedding;
+
+  const resultMatch = stdout.match(/result: (.*)/);
+  if (!resultMatch) {
+    throw new Error("No result found in script output");
+  }
+
+  return JSON.parse(resultMatch[1]);
 };
 
 const fileProcessors: FileProcessors = {

@@ -1,24 +1,16 @@
-import json
 import sys
+import json
 from mlx_embeddings import load, generate
 
-if len(sys.argv) < 4:
-    print("Usage: python text-to-vector.py <input_file> <output_file> <model_name>")
+if len(sys.argv) != 3:
+    print("Usage: python text-to-vector.py <content> <model_name>")
     sys.exit(1)
 
-input_file = sys.argv[1]
-output_file = sys.argv[2]
-model_name = sys.argv[3]
-
-with open(input_file, "r") as f:
-    text = f.read()
+content = sys.argv[1]
+model_name = sys.argv[2]
 
 model, tokenizer = load(model_name)
-
-# For text embeddings
-generated = generate(model, tokenizer, text)
+generated = generate(model, tokenizer, content)
 text_embeds = generated.text_embeds
-print(text,text_embeds)
 
-with open(output_file, "w") as f:
-    json.dump(text_embeds.tolist()[0], f)
+print(f"result: {json.dumps(text_embeds.tolist()[0])}")

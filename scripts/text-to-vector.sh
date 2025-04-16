@@ -2,13 +2,11 @@
 
 # 実行するディレクトリに移動
 cd $(dirname $0)
+CONTENT="$1"
+MODEL_NAME="$2"
 
-input_file=$1
-output_file=$2
-model_name=$3
-
-if [ -z "$input_file" ] || [ -z "$output_file" ] || [ -z "$model_name" ]; then
-  echo "Usage: $0 <input_file> <output_file> <model_name>"
+if [ -z "$CONTENT" ] || [ -z "$MODEL_NAME" ]; then
+  echo "Usage: $0 \"<content>\" \"<model_name>\""
   exit 1
 fi
 
@@ -28,4 +26,4 @@ if $is_first_run; then
 fi
 
 # ファイルを処理
-python text-to-vector.py "$input_file" "$output_file" "$model_name"
+python text-to-vector.py "$CONTENT" "$MODEL_NAME"
