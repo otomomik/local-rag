@@ -20,7 +20,7 @@ if [ "$output_file_format" != "txt" ] && [ "$output_file_format" != "vtt" ] && [
   exit 1
 fi
 
-output_file_name=".whisper.$output_file_format"
+output_file=".whisper.$output_file_format"
 
 is_first_run=true
 # .venvが存在しない場合は作成
@@ -38,4 +38,4 @@ if $is_first_run; then
 fi
 
 # ファイルを監視
-mlx_whisper $input_file --output-name $output_file_name --language ja --output-format $output_file_format --verbose False --model mlx-community/whisper-large-v3-turbo
+mlx_whisper $input_file --output-name $output_file --language ja --output-format $output_file_format --verbose False --model mlx-community/whisper-large-v3-turbo

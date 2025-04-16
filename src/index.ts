@@ -39,9 +39,14 @@ const dbClient = drizzle(pglite);
 // lmstudio
 const lmstudio = new LMStudioClient();
 
-const getEmbedding = async (text: string): Promise<number[]> => {
-  const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
-  const { embedding } = await model.embed(text);
+const getEmbedding = async (content: string): Promise<number[]> => {
+  await fs.writeFile(".embedding-input.txt", content);
+  await execAsync("./embedding.sh");
+  const embedding = JSON.parse(
+    await fs.readFile(".embedding-output.json", "utf8"),
+  );
+  await fs.unlink(".embedding-input.txt");
+  await fs.unlink(".embedding-output.json");
   return embedding;
 };
 
@@ -60,7 +65,7 @@ export const filesTable = pgTable(
     contentHash: text("content_hash").notNull(),
     content: text("content").notNull(),
     contentVector: vector("content_vector", {
-      dimensions: 1024,
+      dimensions: 768,
     }).notNull(),
     contentSearch: text("content_search").notNull(),
   },
@@ -101,8 +106,7 @@ interface FileProcessor {
     buffer: Buffer;
     fileName: string;
     absolutePath: string;
-  }) => Promise<string>;
-  getEmbedding: (content: string) => Promise<number[]>;
+  }) => Promise<string | null>;
 }
 
 interface FileProcessors {
@@ -125,21 +129,11 @@ const detectFileType = async (buffer: Buffer): Promise<FileType> => {
 const fileProcessors: FileProcessors = {
   text: {
     getContent: async ({ buffer }) => buffer.toString("utf8"),
-    getEmbedding: async (content: string) => {
-      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
-      const { embedding } = await model.embed(content);
-      return embedding;
-    },
   },
   pdf: {
     getContent: async ({ buffer }) => {
       // TODO: Implement PDF text extraction
       return buffer.toString("utf8");
-    },
-    getEmbedding: async (content: string) => {
-      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
-      const { embedding } = await model.embed(content);
-      return embedding;
     },
   },
   image: {
@@ -162,49 +156,27 @@ const fileProcessors: FileProcessors = {
       ]);
       return content;
     },
-    getEmbedding: async (content: string) => {
-      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
-      const { embedding } = await model.embed(content);
-      return embedding;
-    },
   },
   video: {
     getContent: async ({ buffer }) => {
       // TODO: Implement video metadata/frame extraction
       return "video content";
     },
-    getEmbedding: async (content: string) => {
-      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
-      const { embedding } = await model.embed(content);
-      return embedding;
-    },
   },
   audio: {
     getContent: async ({ absolutePath }) => {
       const ext = "srt";
-      // Run whisper.sh script with the absolute path
       await execAsync(`./whisper.sh ${absolutePath} ${ext}`);
 
-      // Read the SRT file
       const srtFilePath = `.whisper.${ext}`;
       const content = await fs.readFile(srtFilePath, "utf8");
       await fs.unlink(srtFilePath);
 
       return content;
     },
-    getEmbedding: async (content: string) => {
-      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
-      const { embedding } = await model.embed(content);
-      return embedding;
-    },
   },
   other: {
     getContent: async ({ buffer }) => buffer.toString("utf8"),
-    getEmbedding: async (content: string) => {
-      const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
-      const { embedding } = await model.embed(content);
-      return embedding;
-    },
   },
 };
 
@@ -273,7 +245,13 @@ const processFile = async (params: {
       fileName: path.basename(params.absolutePath),
       absolutePath: params.absolutePath,
     });
-    const contentVector = await processor.getEmbedding(fileContent);
+
+    if (fileContent === null) {
+      console.log(`[SKIP] Failed to get content for ${params.relativePath}`);
+      return;
+    }
+
+    const contentVector = await getEmbedding(fileContent);
 
     await dbClient
       .insert(filesTable)

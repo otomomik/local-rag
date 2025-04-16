@@ -1,5 +1,5 @@
 {
-  "id": "5d2e8972-5f72-4c3f-89af-08b3abae81ff",
+  "id": "f2f1ec7a-d19e-4ddc-a4f9-f0060419b49a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -34,7 +34,7 @@
         },
         "content_vector": {
           "name": "content_vector",
-          "type": "vector(1024)",
+          "type": "vector(768)",
           "primaryKey": false,
           "notNull": true
         },
@@ -82,10 +82,7 @@
       "compositePrimaryKeys": {
         "files_parent_hash_path_pk": {
           "name": "files_parent_hash_path_pk",
-          "columns": [
-            "parent_hash",
-            "path"
-          ]
+          "columns": ["parent_hash", "path"]
         }
       },
       "uniqueConstraints": {},
