@@ -3,7 +3,7 @@ import sys
 from mlx_embeddings import load, generate
 
 if len(sys.argv) < 4:
-    print("Usage: python embedding.py <input_file> <output_file> <model_name>")
+    print("Usage: python text-to-vector.py <input_file> <output_file> <model_name>")
     sys.exit(1)
 
 input_file = sys.argv[1]

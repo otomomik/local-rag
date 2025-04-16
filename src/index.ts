@@ -119,13 +119,18 @@ const getEmbedding = async (
   content: string,
   modelName: string,
 ): Promise<number[]> => {
-  const inputFile = ".embedding-input.txt";
-  const outputFile = ".embedding-output.json";
-  await fs.writeFile(inputFile, content);
-  await execAsync(`./embedding.sh ${inputFile} ${outputFile} ${modelName}`);
-  const embedding = JSON.parse(await fs.readFile(outputFile, "utf8"));
-  await fs.unlink(inputFile);
-  await fs.unlink(outputFile);
+  const inputFile = ".text-to-vector-input.txt";
+  const outputFile = ".text-to-vector-output.json";
+  const outputPrefix = ".text-to-vector";
+  await fs.writeFile(`./scripts/${inputFile}`, content);
+  await execAsync(
+    `./scripts/text-to-vector.sh ${inputFile} ${outputFile} ${modelName} ${outputPrefix}`,
+  );
+  const embedding = JSON.parse(
+    await fs.readFile(`./scripts/${outputFile}`, "utf8"),
+  );
+  await fs.unlink(`./scripts/${inputFile}`);
+  await fs.unlink(`./scripts/${outputFile}`);
   return embedding;
 };
 
@@ -169,11 +174,15 @@ const fileProcessors: FileProcessors = {
   audio: {
     getContent: async ({ absolutePath }) => {
       const ext = "srt";
-      await execAsync(`./whisper.sh ${absolutePath} ${ext}`);
+      const outputPrefix = ".audio-to-text";
+      const modelName = "mlx-community/whisper-large-v3-turbo";
+      await execAsync(
+        `./scripts/audio-to-text.sh ${absolutePath} ${ext} ${outputPrefix} ${modelName}`,
+      );
 
-      const srtFilePath = `.whisper.${ext}`;
-      const content = await fs.readFile(srtFilePath, "utf8");
-      await fs.unlink(srtFilePath);
+      const srtFilePath = `${outputPrefix}.${ext}`;
+      const content = await fs.readFile(`./scripts/${srtFilePath}`, "utf8");
+      await fs.unlink(`./scripts/${srtFilePath}`);
 
       return content;
     },

@@ -28,4 +28,4 @@ if $is_first_run; then
 fi
 
 # ファイルを処理
-python embedding.py "$input_file" "$output_file" "$model_name"
+python text-to-vector.py "$input_file" "$output_file" "$model_name"
