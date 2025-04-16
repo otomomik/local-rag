@@ -123,12 +123,7 @@ const getEmbedding = async (
     `./scripts/text-to-vector.sh "${content}" "${modelName}"`,
   );
 
-  const resultMatch = stdout.match(/result: (.*)/);
-  if (!resultMatch) {
-    throw new Error("No result found in script output");
-  }
-
-  return JSON.parse(resultMatch[1]);
+  return JSON.parse(stdout);
 };
 
 const fileProcessors: FileProcessors = {
@@ -170,18 +165,12 @@ const fileProcessors: FileProcessors = {
   },
   audio: {
     getContent: async ({ absolutePath }) => {
-      const ext = "srt";
-      const outputPrefix = ".audio-to-text";
       const modelName = "mlx-community/whisper-large-v3-turbo";
-      await execAsync(
-        `./scripts/audio-to-text.sh ${absolutePath} ${ext} ${outputPrefix} ${modelName}`,
+      const { stdout } = await execAsync(
+        `./scripts/audio-to-text.sh ${absolutePath} ${modelName}`,
       );
 
-      const srtFilePath = `${outputPrefix}.${ext}`;
-      const content = await fs.readFile(`./scripts/${srtFilePath}`, "utf8");
-      await fs.unlink(`./scripts/${srtFilePath}`);
-
-      return content;
+      return stdout;
     },
   },
   other: {
