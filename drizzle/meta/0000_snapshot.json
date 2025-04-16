@@ -1,5 +1,5 @@
 {
-  "id": "f2f1ec7a-d19e-4ddc-a4f9-f0060419b49a",
+  "id": "f9b3c793-2719-4ddc-973e-99005a907142",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -34,7 +34,7 @@
         },
         "content_vector": {
           "name": "content_vector",
-          "type": "vector(768)",
+          "type": "vector(1024)",
           "primaryKey": false,
           "notNull": true
         },

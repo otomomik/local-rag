@@ -39,17 +39,6 @@ const dbClient = drizzle(pglite);
 // lmstudio
 const lmstudio = new LMStudioClient();
 
-const getEmbedding = async (content: string): Promise<number[]> => {
-  await fs.writeFile(".embedding-input.txt", content);
-  await execAsync("./embedding.sh");
-  const embedding = JSON.parse(
-    await fs.readFile(".embedding-output.json", "utf8"),
-  );
-  await fs.unlink(".embedding-input.txt");
-  await fs.unlink(".embedding-output.json");
-  return embedding;
-};
-
 export const runMigration = async () => {
   await dbClient.execute("CREATE EXTENSION IF NOT EXISTS vector");
   await migrate(dbClient, {
@@ -65,7 +54,7 @@ export const filesTable = pgTable(
     contentHash: text("content_hash").notNull(),
     content: text("content").notNull(),
     contentVector: vector("content_vector", {
-      dimensions: 768,
+      dimensions: 1024,
     }).notNull(),
     contentSearch: text("content_search").notNull(),
   },
@@ -124,6 +113,20 @@ const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   if (mime === "application/pdf") return "pdf";
   if (mime.startsWith("text/") || mime === "application/json") return "text";
   return "other";
+};
+
+const getEmbedding = async (
+  content: string,
+  modelName: string,
+): Promise<number[]> => {
+  const inputFile = ".embedding-input.txt";
+  const outputFile = ".embedding-output.json";
+  await fs.writeFile(inputFile, content);
+  await execAsync(`./embedding.sh ${inputFile} ${outputFile} ${modelName}`);
+  const embedding = JSON.parse(await fs.readFile(outputFile, "utf8"));
+  await fs.unlink(inputFile);
+  await fs.unlink(outputFile);
+  return embedding;
 };
 
 const fileProcessors: FileProcessors = {
@@ -251,7 +254,10 @@ const processFile = async (params: {
       return;
     }
 
-    const contentVector = await getEmbedding(fileContent);
+    const contentVector = await getEmbedding(
+      fileContent,
+      "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
+    );
 
     await dbClient
       .insert(filesTable)
@@ -431,16 +437,23 @@ const main = async () => {
       query: z.string(),
     },
     async ({ query }) => {
-      const embedding = await getEmbedding(query);
+      const embedding = await getEmbedding(
+        query,
+        "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
+      );
       const fileColumns = getTableColumns(filesTable);
       const files = await dbClient
         .select({
           ...fileColumns,
-          similarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
+          similarity: sql<number>`1 - (${cosineDistance(filesTable.contentVector, embedding)})`,
         })
         .from(filesTable)
         .where(eq(filesTable.parentHash, parentHash))
-        .orderBy(desc(cosineDistance(filesTable.contentVector, embedding)));
+        .orderBy(
+          desc(
+            sql<number>`1 - (${cosineDistance(filesTable.contentVector, embedding)})`,
+          ),
+        );
 
       return {
         content: [
@@ -492,20 +505,23 @@ const main = async () => {
       textWeight: z.number().optional().default(0.3),
     },
     async ({ query, vectorWeight, textWeight }) => {
-      const embedding = await getEmbedding(query);
+      const embedding = await getEmbedding(
+        query,
+        "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
+      );
       const fileColumns = getTableColumns(filesTable);
 
       const results = await dbClient
         .select({
           ...fileColumns,
-          vectorSimilarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
+          vectorSimilarity: sql<number>`1 - (${cosineDistance(filesTable.contentVector, embedding)})`,
           textRank: sql<number>`ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query}))`,
         })
         .from(filesTable)
         .where(eq(filesTable.parentHash, parentHash))
         .orderBy(
           desc(
-            sql<number>`(${vectorWeight} * (${cosineDistance(filesTable.contentVector, embedding)}) + 
+            sql<number>`(${vectorWeight} * (1 - (${cosineDistance(filesTable.contentVector, embedding)})) + 
                      ${textWeight} * ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query})))`,
           ),
         );

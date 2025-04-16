@@ -3,7 +3,7 @@ CREATE TABLE "files" (
 	"path" text NOT NULL,
 	"content_hash" text NOT NULL,
 	"content" text NOT NULL,
-	"content_vector" vector(768) NOT NULL,
+	"content_vector" vector(1024) NOT NULL,
 	"content_search" text NOT NULL,
 	CONSTRAINT "files_parent_hash_path_pk" PRIMARY KEY("parent_hash","path")
 );

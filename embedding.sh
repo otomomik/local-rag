@@ -3,6 +3,15 @@
 # 実行するディレクトリに移動
 cd $(dirname $0)
 
+input_file=$1
+output_file=$2
+model_name=$3
+
+if [ -z "$input_file" ] || [ -z "$output_file" ] || [ -z "$model_name" ]; then
+  echo "Usage: $0 <input_file> <output_file> <model_name>"
+  exit 1
+fi
+
 is_first_run=true
 # .venvが存在しない場合は作成
 if [ ! -d ".venv" ]; then
@@ -18,5 +27,5 @@ if $is_first_run; then
   pip install -r requirements.txt
 fi
 
-# ファイルを監視
-python embedding.py
+# ファイルを処理
+python embedding.py "$input_file" "$output_file" "$model_name"
