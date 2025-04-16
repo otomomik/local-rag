@@ -20,8 +20,11 @@ import { LMStudioClient } from "@lmstudio/sdk";
 import { fileTypeFromBuffer } from "file-type";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { exec } from "child_process";
+import { promisify } from "util";
 import { z } from "zod";
 
+const execAsync = promisify(exec);
 // init
 const baseDir = process.argv[2];
 const targetDir = process.argv[3];
@@ -94,7 +97,11 @@ const getHash = (filePath: string): string => {
 type FileType = "image" | "video" | "audio" | "pdf" | "text" | "other";
 
 interface FileProcessor {
-  getContent: (buffer: Buffer, fileName: string) => Promise<string>;
+  getContent: (params: {
+    buffer: Buffer;
+    fileName: string;
+    absolutePath: string;
+  }) => Promise<string>;
   getEmbedding: (content: string) => Promise<number[]>;
 }
 
@@ -117,7 +124,7 @@ const detectFileType = async (buffer: Buffer): Promise<FileType> => {
 
 const fileProcessors: FileProcessors = {
   text: {
-    getContent: async (buffer: Buffer) => buffer.toString("utf8"),
+    getContent: async ({ buffer }) => buffer.toString("utf8"),
     getEmbedding: async (content: string) => {
       const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
       const { embedding } = await model.embed(content);
@@ -125,7 +132,7 @@ const fileProcessors: FileProcessors = {
     },
   },
   pdf: {
-    getContent: async (buffer: Buffer) => {
+    getContent: async ({ buffer }) => {
       // TODO: Implement PDF text extraction
       return buffer.toString("utf8");
     },
@@ -136,7 +143,7 @@ const fileProcessors: FileProcessors = {
     },
   },
   image: {
-    getContent: async (buffer, fileName) => {
+    getContent: async ({ buffer, fileName }) => {
       const model = await lmstudio.llm.model("gemma-3-27b-it");
       const imageBase64 = buffer.toString("base64");
       const image = await lmstudio.files.prepareImageBase64(
@@ -162,7 +169,7 @@ const fileProcessors: FileProcessors = {
     },
   },
   video: {
-    getContent: async (buffer: Buffer) => {
+    getContent: async ({ buffer }) => {
       // TODO: Implement video metadata/frame extraction
       return "video content";
     },
@@ -173,9 +180,17 @@ const fileProcessors: FileProcessors = {
     },
   },
   audio: {
-    getContent: async (buffer: Buffer) => {
-      // TODO: Implement audio transcription
-      return "audio content";
+    getContent: async ({ absolutePath }) => {
+      const ext = "srt";
+      // Run whisper.sh script with the absolute path
+      await execAsync(`./whisper.sh ${absolutePath} ${ext}`);
+
+      // Read the SRT file
+      const srtFilePath = `.whisper.${ext}`;
+      const content = await fs.readFile(srtFilePath, "utf8");
+      await fs.unlink(srtFilePath);
+
+      return content;
     },
     getEmbedding: async (content: string) => {
       const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
@@ -184,7 +199,7 @@ const fileProcessors: FileProcessors = {
     },
   },
   other: {
-    getContent: async (buffer: Buffer) => buffer.toString("utf8"),
+    getContent: async ({ buffer }) => buffer.toString("utf8"),
     getEmbedding: async (content: string) => {
       const model = await lmstudio.embedding.model("mxbai-embed-large-v1");
       const { embedding } = await model.embed(content);
@@ -253,10 +268,11 @@ const processFile = async (params: {
     console.log(`[SKIP] ${params.relativePath}`);
   } else {
     const processor = fileProcessors[fileType];
-    const fileContent = await processor.getContent(
-      fileBuffer,
-      path.basename(params.absolutePath),
-    );
+    const fileContent = await processor.getContent({
+      buffer: fileBuffer,
+      fileName: path.basename(params.absolutePath),
+      absolutePath: params.absolutePath,
+    });
     const contentVector = await processor.getEmbedding(fileContent);
 
     await dbClient

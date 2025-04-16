@@ -4,7 +4,7 @@
   "scripts": {
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "fmt": "prettier --write ."
+    "fmt": "prettier --write . --ignore-path .gitignore"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
@@ -19,6 +19,7 @@
     "@types/node": "^22.14.1",
     "drizzle-kit": "^0.30.6",
     "prettier": "^3.5.3",
+    "prettier-plugin-sh": "^0.17.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
   }
