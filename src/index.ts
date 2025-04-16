@@ -7,9 +7,12 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createHash } from "crypto";
 import fs from "fs/promises";
-import { and, eq } from "drizzle-orm";
+import { and, cosineDistance, desc, eq, getTableColumns, like } from "drizzle-orm";
 import { LMStudioClient } from "@lmstudio/sdk";
 import { fileTypeFromBuffer } from "file-type";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { z } from "zod";
 
 // init
 const baseDir = process.argv[2];
@@ -48,7 +51,6 @@ export const filesTable = pgTable(
     contentVector: vector("content_vector", {
       dimensions: 1024,
     }).notNull(),
-    fileType: text("file_type").notNull(),
   },
   (t) => [
     primaryKey({
@@ -138,7 +140,6 @@ const fileProcessors: FileProcessors = {
           images: [image],
         },
       ]);
-      console.log(content);
       return content;
     },
     getEmbedding: async (content: string) => {
@@ -253,7 +254,6 @@ const processFile = async (params: {
         contentHash: fileHash,
         content: fileContent,
         contentVector,
-        fileType,
       })
       .onConflictDoUpdate({
         target: [filesTable.parentHash, filesTable.path],
@@ -261,7 +261,6 @@ const processFile = async (params: {
           contentHash: fileHash,
           content: fileContent,
           contentVector,
-          fileType,
         },
         setWhere: and(
           eq(filesTable.parentHash, params.parentHash),
@@ -318,11 +317,99 @@ const main = async () => {
     ? targetDir
     : path.resolve(baseDir, targetDir);
 
+  const parentHash = getHash(watchDir);
+
+  const server = new McpServer({
+    name: "Local Rag",
+    version: "0.0.1",
+  })
+
+  server.tool("list-files", "list files in the directory", {
+    path: z.string().optional().default(""),
+  }, async ({ path }) => {
+    const files = await dbClient.select().from(filesTable).where(
+      and(
+        eq(filesTable.parentHash, parentHash),
+        like(filesTable.path, `${path}%`)
+      )
+    )
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: files.map((file) => `${file.path}`).join("\n"),
+        }
+      ]
+    }
+  })
+
+  server.tool("get-file", "get file content", {
+    path: z.string(),
+  }, async ({ path }) => {
+    const [file] = await dbClient.select().from(filesTable).where(
+      and(
+        eq(filesTable.parentHash, parentHash),
+        eq(filesTable.path, path)
+      )
+    )
+    if (!file) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: "File not found",
+          }
+        ]
+      }
+    }
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: file.content,
+        }
+      ]
+    }
+  })
+
+  server.tool("search-files-for-vector", "search files for vector", {
+    query: z.string(),
+  }, async ({ query }) => {
+    const embedding = await getEmbedding(query);
+    const fileColumns = getTableColumns(filesTable);
+    const files = await dbClient.select({
+      ...fileColumns,
+      similarity: cosineDistance(filesTable.contentVector, embedding),
+
+    }).from(filesTable).where(
+      and(
+        eq(filesTable.parentHash, parentHash),
+      )
+    ).orderBy(desc(
+      cosineDistance(filesTable.contentVector, embedding)
+
+    ))
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: files.map((file) => `${file.path} (${file.similarity})`).join("\n"),
+        }
+      ]
+    }
+  })
+
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+
   const watcher = chokidar.watch(watchDir, {
     ignored: (path, stats) => !!stats?.isFile() && shouldIgnoreFile(path),
   });
 
-  const parentHash = getHash(watchDir);
 
   watcher
     .on("add", async (absolutePath) => {
@@ -338,6 +425,7 @@ const main = async () => {
       queueFile({ parentHash, absolutePath, relativePath, type: "unlink" });
     });
 };
+
 
 if (!!baseDir && !!targetDir) {
   main();

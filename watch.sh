@@ -8,4 +8,4 @@ if [ -z "$target_dir" ]; then
     target_dir="."
 fi
 
-npm run watch $base_dir $target_dir 
+npx @modelcontextprotocol/inspector npx tsx src/index.ts $base_dir $target_dir 

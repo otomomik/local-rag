@@ -1,5 +1,5 @@
 {
-  "id": "73c93032-efbe-4f15-9050-9d0f4600e96b",
+  "id": "e0bda8f9-1730-4907-b6e8-cb940afabe90",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -61,7 +61,10 @@
       "compositePrimaryKeys": {
         "files_parent_hash_path_pk": {
           "name": "files_parent_hash_path_pk",
-          "columns": ["parent_hash", "path"]
+          "columns": [
+            "parent_hash",
+            "path"
+          ]
         }
       },
       "uniqueConstraints": {},
