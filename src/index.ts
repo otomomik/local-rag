@@ -7,7 +7,7 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createHash } from "crypto";
 import fs from "fs/promises";
-import { and, cosineDistance, desc, eq, getTableColumns, like } from "drizzle-orm";
+import { and, cosineDistance, desc, eq, getTableColumns, like, sql } from "drizzle-orm";
 import { LMStudioClient } from "@lmstudio/sdk";
 import { fileTypeFromBuffer } from "file-type";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -51,6 +51,7 @@ export const filesTable = pgTable(
     contentVector: vector("content_vector", {
       dimensions: 1024,
     }).notNull(),
+    contentSearch: text("content_search").notNull(),
   },
   (t) => [
     primaryKey({
@@ -60,6 +61,7 @@ export const filesTable = pgTable(
       "hnsw",
       t.contentVector.op("vector_cosine_ops"),
     ),
+    index("content_search_index").using("gin", sql`to_tsvector('japanese', ${t.contentSearch})`),
   ],
 );
 
@@ -254,6 +256,7 @@ const processFile = async (params: {
         contentHash: fileHash,
         content: fileContent,
         contentVector,
+        contentSearch: fileContent,
       })
       .onConflictDoUpdate({
         target: [filesTable.parentHash, filesTable.path],
@@ -261,6 +264,7 @@ const processFile = async (params: {
           contentHash: fileHash,
           content: fileContent,
           contentVector,
+          contentSearch: fileContent,
         },
         setWhere: and(
           eq(filesTable.parentHash, params.parentHash),
@@ -390,7 +394,6 @@ const main = async () => {
       )
     ).orderBy(desc(
       cosineDistance(filesTable.contentVector, embedding)
-
     ))
 
     return {
@@ -398,6 +401,26 @@ const main = async () => {
         {
           type: "text",
           text: files.map((file) => `${file.path} (${file.similarity})`).join("\n"),
+        }
+      ]
+    }
+  })
+
+  server.tool("search-files-full-text", "search files using full-text search", {
+    query: z.string(),
+  }, async ({ query }) => {
+    const files = await dbClient.select().from(filesTable).where(
+      and(
+        eq(filesTable.parentHash, parentHash),
+        sql`to_tsvector('japanese', ${filesTable.contentSearch}) @@ plainto_tsquery('japanese', ${query})`
+      )
+    );
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: files.map((file) => `${file.path}`).join("\n"),
         }
       ]
     }
