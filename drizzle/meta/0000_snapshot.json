@@ -1,5 +1,5 @@
 {
-  "id": "e0bda8f9-1730-4907-b6e8-cb940afabe90",
+  "id": "bd461cb6-f04f-4b4e-8363-c05d1a8e196e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -37,6 +37,12 @@
           "type": "vector(1024)",
           "primaryKey": false,
           "notNull": true
+        },
+        "content_search": {
+          "name": "content_search",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {
@@ -54,6 +60,21 @@
           "isUnique": false,
           "concurrently": false,
           "method": "hnsw",
+          "with": {}
+        },
+        "content_search_index": {
+          "name": "content_search_index",
+          "columns": [
+            {
+              "expression": "to_tsvector('simple', \"content_search\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         }
       },

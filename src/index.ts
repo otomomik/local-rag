@@ -61,7 +61,7 @@ export const filesTable = pgTable(
       "hnsw",
       t.contentVector.op("vector_cosine_ops"),
     ),
-    index("content_search_index").using("gin", sql`to_tsvector('japanese', ${t.contentSearch})`),
+    index("content_search_index").using("gin", sql`to_tsvector('simple', ${t.contentSearch})`),
   ],
 );
 
@@ -379,28 +379,23 @@ const main = async () => {
     }
   })
 
-  server.tool("search-files-for-vector", "search files for vector", {
+  server.tool("search-files-vector", "search files using vector similarity", {
     query: z.string(),
   }, async ({ query }) => {
     const embedding = await getEmbedding(query);
     const fileColumns = getTableColumns(filesTable);
     const files = await dbClient.select({
       ...fileColumns,
-      similarity: cosineDistance(filesTable.contentVector, embedding),
-
+      similarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
     }).from(filesTable).where(
-      and(
-        eq(filesTable.parentHash, parentHash),
-      )
-    ).orderBy(desc(
-      cosineDistance(filesTable.contentVector, embedding)
-    ))
+      eq(filesTable.parentHash, parentHash)
+    ).orderBy(desc(cosineDistance(filesTable.contentVector, embedding)));
 
     return {
       content: [
         {
           type: "text",
-          text: files.map((file) => `${file.path} (${file.similarity})`).join("\n"),
+          text: files.map((file) => `${file.path} (${file.similarity.toFixed(3)})`).join("\n"),
         }
       ]
     }
@@ -412,7 +407,7 @@ const main = async () => {
     const files = await dbClient.select().from(filesTable).where(
       and(
         eq(filesTable.parentHash, parentHash),
-        sql`to_tsvector('japanese', ${filesTable.contentSearch}) @@ plainto_tsquery('japanese', ${query})`
+        sql`to_tsvector('simple', ${filesTable.contentSearch}) @@ plainto_tsquery('simple', ${query})`
       )
     );
 
@@ -421,6 +416,28 @@ const main = async () => {
         {
           type: "text",
           text: files.map((file) => `${file.path}`).join("\n"),
+        }
+      ]
+    }
+  })
+
+  server.tool("search-files-hybrid", "search files using vector similarity", {
+    query: z.string(),
+  }, async ({ query }) => {
+    const embedding = await getEmbedding(query);
+    const fileColumns = getTableColumns(filesTable);
+    const files = await dbClient.select({
+      ...fileColumns,
+      similarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
+    }).from(filesTable).where(
+      eq(filesTable.parentHash, parentHash)
+    ).orderBy(desc(cosineDistance(filesTable.contentVector, embedding)));
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: files.map((file) => `${file.path} (${file.similarity.toFixed(3)})`).join("\n"),
         }
       ]
     }
