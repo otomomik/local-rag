@@ -7,7 +7,15 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { createHash } from "crypto";
 import fs from "fs/promises";
-import { and, cosineDistance, desc, eq, getTableColumns, like, sql } from "drizzle-orm";
+import {
+  and,
+  cosineDistance,
+  desc,
+  eq,
+  getTableColumns,
+  like,
+  sql,
+} from "drizzle-orm";
 import { LMStudioClient } from "@lmstudio/sdk";
 import { fileTypeFromBuffer } from "file-type";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -61,7 +69,10 @@ export const filesTable = pgTable(
       "hnsw",
       t.contentVector.op("vector_cosine_ops"),
     ),
-    index("content_search_index").using("gin", sql`to_tsvector('simple', ${t.contentSearch})`),
+    index("content_search_index").using(
+      "gin",
+      sql`to_tsvector('simple', ${t.contentSearch})`,
+    ),
   ],
 );
 
@@ -92,7 +103,7 @@ interface FileProcessors {
 }
 
 const detectFileType = async (buffer: Buffer): Promise<FileType> => {
-  const fileType = await fileTypeFromBuffer(buffer.slice(0, 1024));
+  const fileType = await fileTypeFromBuffer(buffer);
   if (!fileType) return "other";
 
   const mime = fileType.mime;
@@ -135,7 +146,7 @@ const fileProcessors: FileProcessors = {
       const { content } = await model.respond([
         {
           role: "system",
-          content: `あなたは画像を説明するAIです。`
+          content: `あなたは画像を説明するAIです。`,
         },
         {
           role: "user",
@@ -300,7 +311,7 @@ const removeFile = async (params: {
     .delete(filesTable)
     .where(
       eq(filesTable.parentHash, params.parentHash) &&
-      eq(filesTable.path, params.relativePath),
+        eq(filesTable.path, params.relativePath),
     );
 };
 
@@ -312,6 +323,33 @@ const queueFile = (params: {
 }) => {
   fileQueue.push(params);
   processQueue();
+};
+
+const cleanupNonExistentFiles = async (
+  watchDir: string,
+  parentHash: string,
+) => {
+  const files = await dbClient
+    .select()
+    .from(filesTable)
+    .where(eq(filesTable.parentHash, parentHash));
+
+  for (const file of files) {
+    const absolutePath = path.join(watchDir, file.path);
+    try {
+      await fs.access(absolutePath);
+    } catch {
+      console.log(`[CLEANUP] Removing non-existent file: ${file.path}`);
+      await dbClient
+        .delete(filesTable)
+        .where(
+          and(
+            eq(filesTable.parentHash, parentHash),
+            eq(filesTable.path, file.path),
+          ),
+        );
+    }
+  }
 };
 
 // main
@@ -326,142 +364,184 @@ const main = async () => {
   const server = new McpServer({
     name: "Local Rag",
     version: "0.0.1",
-  })
+  });
 
-  server.tool("list-files", "list files in the directory", {
-    path: z.string().optional().default(""),
-  }, async ({ path }) => {
-    const files = await dbClient.select().from(filesTable).where(
-      and(
-        eq(filesTable.parentHash, parentHash),
-        like(filesTable.path, `${path}%`)
-      )
-    )
+  server.tool(
+    "list-files",
+    "list files in the directory",
+    {
+      path: z.string().optional().default(""),
+    },
+    async ({ path }) => {
+      const files = await dbClient
+        .select()
+        .from(filesTable)
+        .where(
+          and(
+            eq(filesTable.parentHash, parentHash),
+            like(filesTable.path, `${path}%`),
+          ),
+        );
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: files.map((file) => `${file.path}`).join("\n"),
-        }
-      ]
-    }
-  })
-
-  server.tool("get-file", "get file content", {
-    path: z.string(),
-  }, async ({ path }) => {
-    const [file] = await dbClient.select().from(filesTable).where(
-      and(
-        eq(filesTable.parentHash, parentHash),
-        eq(filesTable.path, path)
-      )
-    )
-    if (!file) {
       return {
-        isError: true,
         content: [
           {
             type: "text",
-            text: "File not found",
-          }
-        ]
+            text: files.map((file) => `${file.path}`).join("\n"),
+          },
+        ],
+      };
+    },
+  );
+
+  server.tool(
+    "get-file",
+    "get file content",
+    {
+      path: z.string(),
+    },
+    async ({ path }) => {
+      const [file] = await dbClient
+        .select()
+        .from(filesTable)
+        .where(
+          and(eq(filesTable.parentHash, parentHash), eq(filesTable.path, path)),
+        );
+      if (!file) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "File not found",
+            },
+          ],
+        };
       }
-    }
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: file.content,
-        }
-      ]
-    }
-  })
+      return {
+        content: [
+          {
+            type: "text",
+            text: file.content,
+          },
+        ],
+      };
+    },
+  );
 
-  server.tool("search-files-vector", "search files using vector similarity", {
-    query: z.string(),
-  }, async ({ query }) => {
-    const embedding = await getEmbedding(query);
-    const fileColumns = getTableColumns(filesTable);
-    const files = await dbClient.select({
-      ...fileColumns,
-      similarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
-    }).from(filesTable).where(
-      eq(filesTable.parentHash, parentHash)
-    ).orderBy(desc(cosineDistance(filesTable.contentVector, embedding)));
+  server.tool(
+    "search-files-vector",
+    "search files using vector similarity",
+    {
+      query: z.string(),
+    },
+    async ({ query }) => {
+      const embedding = await getEmbedding(query);
+      const fileColumns = getTableColumns(filesTable);
+      const files = await dbClient
+        .select({
+          ...fileColumns,
+          similarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
+        })
+        .from(filesTable)
+        .where(eq(filesTable.parentHash, parentHash))
+        .orderBy(desc(cosineDistance(filesTable.contentVector, embedding)));
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: files.map((file) => `${file.path} (${file.similarity.toFixed(3)})`).join("\n"),
-        }
-      ]
-    }
-  })
+      return {
+        content: [
+          {
+            type: "text",
+            text: files
+              .map((file) => `${file.path} (${file.similarity.toFixed(3)})`)
+              .join("\n"),
+          },
+        ],
+      };
+    },
+  );
 
-  server.tool("search-files-full-text", "search files using full-text search", {
-    query: z.string(),
-  }, async ({ query }) => {
-    const files = await dbClient.select().from(filesTable).where(
-      and(
-        eq(filesTable.parentHash, parentHash),
-        sql`to_tsvector('simple', ${filesTable.contentSearch}) @@ plainto_tsquery('simple', ${query})`
-      )
-    );
+  server.tool(
+    "search-files-full-text",
+    "search files using full-text search",
+    {
+      query: z.string(),
+    },
+    async ({ query }) => {
+      const files = await dbClient
+        .select()
+        .from(filesTable)
+        .where(
+          and(
+            eq(filesTable.parentHash, parentHash),
+            sql`to_tsvector('simple', ${filesTable.contentSearch}) @@ plainto_tsquery('simple', ${query})`,
+          ),
+        );
 
-    return {
-      content: [
-        {
-          type: "text",
-          text: files.map((file) => `${file.path}`).join("\n"),
-        }
-      ]
-    }
-  })
+      return {
+        content: [
+          {
+            type: "text",
+            text: files.map((file) => `${file.path}`).join("\n"),
+          },
+        ],
+      };
+    },
+  );
 
-  server.tool("search-files-hybrid", "search files using both vector similarity and full-text search", {
-    query: z.string(),
-    vectorWeight: z.number().optional().default(0.7),
-    textWeight: z.number().optional().default(0.3),
-  }, async ({ query, vectorWeight, textWeight }) => {
-    const embedding = await getEmbedding(query);
-    const fileColumns = getTableColumns(filesTable);
-    
-    const results = await dbClient.select({
-      ...fileColumns,
-      vectorSimilarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
-      textRank: sql<number>`ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query}))`,
-    }).from(filesTable).where(
-      eq(filesTable.parentHash, parentHash)
-    ).orderBy(
-      desc(
-        sql<number>`(${vectorWeight} * (${cosineDistance(filesTable.contentVector, embedding)}) + 
-                     ${textWeight} * ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query})))`
-      )
-    );
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: results.map((file) => {
-            const combinedScore = vectorWeight * file.vectorSimilarity + textWeight * file.textRank;
-            return `${file.path} (${combinedScore.toFixed(3)})`;
-          }).join("\n"),
-        }
-      ]
-    }
-  })
+  server.tool(
+    "search-files-hybrid",
+    "search files using both vector similarity and full-text search",
+    {
+      query: z.string(),
+      vectorWeight: z.number().optional().default(0.7),
+      textWeight: z.number().optional().default(0.3),
+    },
+    async ({ query, vectorWeight, textWeight }) => {
+      const embedding = await getEmbedding(query);
+      const fileColumns = getTableColumns(filesTable);
+
+      const results = await dbClient
+        .select({
+          ...fileColumns,
+          vectorSimilarity: sql<number>`${cosineDistance(filesTable.contentVector, embedding)}`,
+          textRank: sql<number>`ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query}))`,
+        })
+        .from(filesTable)
+        .where(eq(filesTable.parentHash, parentHash))
+        .orderBy(
+          desc(
+            sql<number>`(${vectorWeight} * (${cosineDistance(filesTable.contentVector, embedding)}) + 
+                     ${textWeight} * ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query})))`,
+          ),
+        );
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: results
+              .map((file) => {
+                const combinedScore =
+                  vectorWeight * file.vectorSimilarity +
+                  textWeight * file.textRank;
+                return `${file.path} (${combinedScore.toFixed(3)})`;
+              })
+              .join("\n"),
+          },
+        ],
+      };
+    },
+  );
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
+  await cleanupNonExistentFiles(watchDir, parentHash);
+
   const watcher = chokidar.watch(watchDir, {
     ignored: (path, stats) => !!stats?.isFile() && shouldIgnoreFile(path),
   });
-
 
   watcher
     .on("add", async (absolutePath) => {
@@ -477,7 +557,6 @@ const main = async () => {
       queueFile({ parentHash, absolutePath, relativePath, type: "unlink" });
     });
 };
-
 
 if (!!baseDir && !!targetDir) {
   main();
