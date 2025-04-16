@@ -148,9 +148,14 @@ const fileProcessors: FileProcessors = {
     },
   },
   video: {
-    getContent: async ({ buffer }) => {
-      // TODO: Implement video metadata/frame extraction
-      return "video content";
+    getContent: async ({ absolutePath }) => {
+      const modelName = "mlx-community/Qwen2.5-VL-32B-Instruct-4bit";
+      const prompt =
+        "あなたは動画を説明するAIです。この動画ついて詳しく説明してください。";
+      const { stdout } = await execAsync(
+        `./scripts/video_to_text.sh "${absolutePath}" "${modelName}" "${prompt}"`,
+      );
+      return stdout;
     },
   },
   audio: {
