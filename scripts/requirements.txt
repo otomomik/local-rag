@@ -1,2 +1,3 @@
 mlx-whisper==0.4.2
 mlx-embeddings==0.0.3
+mlx-vlm==0.1.22

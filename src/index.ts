@@ -137,24 +137,14 @@ const fileProcessors: FileProcessors = {
     },
   },
   image: {
-    getContent: async ({ buffer, fileName }) => {
-      const model = await lmstudio.llm.model("gemma-3-27b-it");
-      const imageBase64 = buffer.toString("base64");
-      const image = await lmstudio.files.prepareImageBase64(
-        fileName,
-        imageBase64,
+    getContent: async ({ absolutePath }) => {
+      const modelName = "mlx-community/gemma-3-27b-it-4bit";
+      const prompt =
+        "あなたは画像を説明するAIです。この画像について詳しく説明してください。";
+      const { stdout } = await execAsync(
+        `./scripts/image_to_text.sh "${absolutePath}" "${modelName}" "${prompt}"`,
       );
-      const { content } = await model.respond([
-        {
-          role: "system",
-          content: `あなたは画像を説明するAIです。`,
-        },
-        {
-          role: "user",
-          images: [image],
-        },
-      ]);
-      return content;
+      return stdout;
     },
   },
   video: {
@@ -218,7 +208,10 @@ const processFile = async (params: {
   relativePath: string;
   type: "add" | "change";
 }) => {
-  console.log(`[${params.type.toUpperCase()}] ${params.relativePath}`);
+  // start
+  console.log(
+    `[${params.type.toUpperCase()}]: START -> ${params.relativePath}`,
+  );
   const fileBuffer = await fs.readFile(params.absolutePath);
   const fileType = await detectFileType(fileBuffer);
   const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
@@ -277,6 +270,9 @@ const processFile = async (params: {
           eq(filesTable.path, params.relativePath),
         ),
       });
+    console.log(
+      `[${params.type.toUpperCase()}]: END -> ${params.relativePath}`,
+    );
   }
 };
 
