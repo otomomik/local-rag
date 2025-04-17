@@ -25,7 +25,7 @@ import { fileTypeFromBuffer } from "file-type";
 import { fileURLToPath } from "url";
 
 // Logging setup
-type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+type LogLevel = "debug" | "info" | "warn" | "error";
 
 interface Logger {
   debug: (message: string) => Promise<void>;
@@ -38,30 +38,30 @@ let logger: Logger | null = null;
 
 const setupLogging = async (): Promise<Logger> => {
   if (logger) return logger;
-  
+
   const logsDir = path.join(projectRootDir, ".logs");
   try {
     await fs.access(logsDir);
   } catch {
     await fs.mkdir(logsDir, { recursive: true });
   }
-  
-  const today = new Date().toISOString().split('T')[0];
+
+  const today = new Date().toISOString().split("T")[0];
   const logFile = path.join(logsDir, `${today}.log`);
-  
+
   const logWithLevel = async (message: string, level: LogLevel) => {
     const timestamp = new Date().toISOString();
     const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
     await fs.appendFile(logFile, logMessage);
   };
-  
+
   logger = {
-    debug: (message: string) => logWithLevel(message, 'debug'),
-    info: (message: string) => logWithLevel(message, 'info'),
-    warn: (message: string) => logWithLevel(message, 'warn'),
-    error: (message: string) => logWithLevel(message, 'error'),
+    debug: (message: string) => logWithLevel(message, "debug"),
+    info: (message: string) => logWithLevel(message, "info"),
+    warn: (message: string) => logWithLevel(message, "warn"),
+    error: (message: string) => logWithLevel(message, "error"),
   };
-  
+
   return logger;
 };
 
@@ -69,7 +69,10 @@ const execAsync = promisify(exec);
 // init
 const baseDir = process.cwd();
 const targetDir = process.argv[2] || ".";
-const projectRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const projectRootDir = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 
 // db
 const pglite = new PGlite({
@@ -252,7 +255,9 @@ const processFile = async (params: {
 }) => {
   const log = await setupLogging();
   // start
-  await log.debug(`[${params.type.toUpperCase()}]: START -> ${params.relativePath}`);
+  await log.debug(
+    `[${params.type.toUpperCase()}]: START -> ${params.relativePath}`,
+  );
   const fileBuffer = await fs.readFile(params.absolutePath);
   const fileType = await detectFileType(fileBuffer);
   const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
@@ -311,7 +316,9 @@ const processFile = async (params: {
           eq(filesTable.path, params.relativePath),
         ),
       });
-    await log.debug(`[${params.type.toUpperCase()}]: END -> ${params.relativePath}`);
+    await log.debug(
+      `[${params.type.toUpperCase()}]: END -> ${params.relativePath}`,
+    );
   }
 };
 
@@ -386,7 +393,7 @@ const cleanupNonExistentFiles = async (
 const main = async () => {
   const log = await setupLogging();
   await log.info("Starting Local Rag server...");
-  
+
   await runMigration();
   const watchDir = path.isAbsolute(targetDir)
     ? targetDir
@@ -617,7 +624,7 @@ const main = async () => {
       await log.info(`File removed: ${relativePath}`);
       queueFile({ parentHash, absolutePath, relativePath, type: "unlink" });
     });
-    
+
   await log.info("File watcher initialized");
 };
 
