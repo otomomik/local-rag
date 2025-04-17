@@ -469,8 +469,10 @@ const main = async () => {
     "search files using vector similarity",
     {
       query: z.string(),
+      limit: z.number().optional().default(10),
+      offset: z.number().optional().default(0),
     },
-    async ({ query }) => {
+    async ({ query, limit, offset }) => {
       const embedding = await getEmbedding(
         query,
         "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
@@ -487,7 +489,9 @@ const main = async () => {
           desc(
             sql<number>`1 - (${cosineDistance(filesTable.contentVector, embedding)})`,
           ),
-        );
+        )
+        .limit(limit)
+        .offset(offset);
 
       return {
         content: [
@@ -507,8 +511,10 @@ const main = async () => {
     "search files using full-text search",
     {
       query: z.string(),
+      limit: z.number().optional().default(10),
+      offset: z.number().optional().default(0),
     },
-    async ({ query }) => {
+    async ({ query, limit, offset }) => {
       const files = await dbClient
         .select()
         .from(filesTable)
@@ -517,7 +523,9 @@ const main = async () => {
             eq(filesTable.parentHash, parentHash),
             sql`to_tsvector('simple', ${filesTable.contentSearch}) @@ plainto_tsquery('simple', ${query})`,
           ),
-        );
+        )
+        .limit(limit)
+        .offset(offset);
 
       return {
         content: [
@@ -537,8 +545,10 @@ const main = async () => {
       query: z.string(),
       vectorWeight: z.number().optional().default(0.7),
       textWeight: z.number().optional().default(0.3),
+      limit: z.number().optional().default(10),
+      offset: z.number().optional().default(0),
     },
-    async ({ query, vectorWeight, textWeight }) => {
+    async ({ query, vectorWeight, textWeight, limit, offset }) => {
       const embedding = await getEmbedding(
         query,
         "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
@@ -558,7 +568,9 @@ const main = async () => {
             sql<number>`(${vectorWeight} * (1 - (${cosineDistance(filesTable.contentVector, embedding)})) + 
                      ${textWeight} * ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query})))`,
           ),
-        );
+        )
+        .limit(limit)
+        .offset(offset);
 
       return {
         content: [
