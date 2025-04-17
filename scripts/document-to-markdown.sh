@@ -4,10 +4,9 @@
 cd $(dirname $0) > /dev/null
 
 input_file=$1
-model_name=$2
 
-if [ -z "$input_file" ] || [ -z "$model_name" ]; then
-  echo "Usage: $0 <input_file> <model_name>"
+if [ -z "$input_file" ]; then
+  echo "Usage: $0 <input_file>"
   exit 1
 fi
 
@@ -27,4 +26,4 @@ if $is_first_run; then
 fi
 
 # ファイルを処理
-python audio-to-text.py $input_file $model_name
+python document-to-markdown.py $input_file

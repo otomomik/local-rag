@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HTMLサンプル</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        margin: 0 auto;
+        max-width: 800px;
+        padding: 20px;
+      }
+      h1 {
+        color: #2c3e50;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 10px;
+      }
+      h2 {
+        color: #2980b9;
+        margin-top: 30px;
+      }
+      ul,
+      ol {
+        margin-left: 20px;
+      }
+      code {
+        background-color: #f4f4f4;
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-family: monospace;
+      }
+      pre {
+        background-color: #f4f4f4;
+        padding: 15px;
+        border-radius: 5px;
+        overflow-x: auto;
+      }
+      blockquote {
+        border-left: 4px solid #ccc;
+        padding-left: 15px;
+        margin-left: 0;
+        color: #555;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+      th,
+      td {
+        padding: 8px;
+        border: 1px solid #ddd;
+        text-align: left;
+      }
+      th {
+        background-color: #f2f2f2;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+      }
+      a {
+        color: #3498db;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>HTMLからMarkdownへの変換サンプル</h1>
+      <p>
+        このHTMLファイルには、Markdownに変換できる一般的なHTML要素が含まれています。
+      </p>
+    </header>
+
+    <main>
+      <section>
+        <h2>見出し</h2>
+        <p>HTMLには6レベルの見出しがあります。</p>
+        <h1>見出しレベル1</h1>
+        <h2>見出しレベル2</h2>
+        <h3>見出しレベル3</h3>
+        <h4>見出しレベル4</h4>
+        <h5>見出しレベル5</h5>
+        <h6>見出しレベル6</h6>
+      </section>
+
+      <section>
+        <h2>テキストフォーマット</h2>
+        <p>
+          テキストは様々な方法で<strong>強調</strong>したり<em>強調斜体</em>にしたりできます。
+        </p>
+        <p>
+          <strong>太字</strong
+          >や<em>斜体</em>、<u>下線</u>、<s>取り消し線</s>も使えます。
+        </p>
+        <p>インラインの<code>コード</code>も表示できます。</p>
+      </section>
+
+      <section>
+        <h2>リスト</h2>
+        <h3>順序なしリスト（箇条書き）:</h3>
+        <ul>
+          <li>リストアイテム1</li>
+          <li>
+            リストアイテム2
+            <ul>
+              <li>ネストされたアイテム2.1</li>
+              <li>ネストされたアイテム2.2</li>
+            </ul>
+          </li>
+          <li>リストアイテム3</li>
+        </ul>
+
+        <h3>順序付きリスト（番号付き）:</h3>
+        <ol>
+          <li>最初のアイテム</li>
+          <li>
+            2番目のアイテム
+            <ol>
+              <li>ネストされた番号付きリスト</li>
+              <li>別のネストされたアイテム</li>
+            </ol>
+          </li>
+          <li>3番目のアイテム</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>リンク</h2>
+        <p><a href="https://www.example.com">外部リンクの例</a></p>
+        <p><a href="#見出し">ページ内リンク（アンカーリンク）</a></p>
+      </section>
+
+      <section>
+        <h2>画像</h2>
+        <p>画像の例:</p>
+        <img src="/api/placeholder/400/200" alt="プレースホルダー画像" />
+        <figcaption>図1: サンプル画像のキャプション</figcaption>
+      </section>
+
+      <section>
+        <h2>引用</h2>
+        <blockquote>
+          <p>これは引用文です。他の文章を引用するときに使われます。</p>
+          <p>複数の段落を含むこともできます。</p>
+          <cite>— 引用元</cite>
+        </blockquote>
+      </section>
+
+      <section>
+        <h2>コードブロック</h2>
+        <pre><code>// JavaScriptのコード例
+function greeting(name) {
+    return `こんにちは、${name}さん!`;
+}
+
+console.log(greeting("田中"));
+</code></pre>
+      </section>
+
+      <section>
+        <h2>表（テーブル）</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>名前</th>
+              <th>年齢</th>
+              <th>職業</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>山田太郎</td>
+              <td>28</td>
+              <td>エンジニア</td>
+            </tr>
+            <tr>
+              <td>佐藤花子</td>
+              <td>32</td>
+              <td>デザイナー</td>
+            </tr>
+            <tr>
+              <td>鈴木一郎</td>
+              <td>45</td>
+              <td>マネージャー</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section>
+        <h2>水平線</h2>
+        <p>セクションを区切るための水平線:</p>
+        <hr />
+        <p>水平線の後のテキスト</p>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2025 サンプルHTMLドキュメント | <a href="#">トップに戻る</a></p>
+    </footer>
+  </body>
+</html>

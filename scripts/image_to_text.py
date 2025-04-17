@@ -26,5 +26,7 @@ formatted_prompt = apply_chat_template(
 )
 
 # Generate output
-output = generate(model, processor, formatted_prompt, [input], verbose=False)
+output = generate(
+    model, processor, formatted_prompt, [input], max_tokens=4096, verbose=False
+)
 print(output)

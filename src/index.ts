@@ -130,7 +130,14 @@ const getHash = (filePath: string): string => {
   return createHash("sha256").update(filePath).digest("hex");
 };
 
-type FileType = "image" | "video" | "audio" | "pdf" | "text" | "other";
+type FileType =
+  | "image"
+  | "video"
+  | "audio"
+  | "pdf"
+  | "text"
+  | "document"
+  | "other";
 
 interface FileProcessor {
   getContent: (params: {
@@ -152,6 +159,22 @@ const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   if (mime.startsWith("audio/")) return "audio";
   if (mime === "application/pdf") return "pdf";
   if (mime.startsWith("text/") || mime === "application/json") return "text";
+
+  // Document types
+  if (
+    mime ===
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || // Excel
+    mime ===
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation" || // PowerPoint
+    mime ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || // Word
+    mime === "application/vnd.ms-excel" || // Old Excel
+    mime === "application/vnd.ms-powerpoint" || // Old PowerPoint
+    mime === "application/msword" // Old Word
+  ) {
+    return "document";
+  }
+
   return "other";
 };
 
@@ -168,12 +191,22 @@ const getEmbedding = async (
 
 const fileProcessors: FileProcessors = {
   text: {
-    getContent: async ({ buffer }) => buffer.toString("utf8"),
+    getContent: async ({ buffer, fileName }) => {
+      return buffer.toString("utf8");
+    },
   },
   pdf: {
     getContent: async ({ buffer }) => {
       // TODO: Implement PDF text extraction
       return buffer.toString("utf8");
+    },
+  },
+  document: {
+    getContent: async ({ absolutePath }) => {
+      const { stdout } = await execAsync(
+        `"${path.join(projectRootDir, "scripts/document-to-markdown.sh")}" "${absolutePath}"`,
+      );
+      return stdout;
     },
   },
   image: {
