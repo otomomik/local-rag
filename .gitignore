@@ -2,3 +2,4 @@ node_modules
 .pglite
 .DS_Store
 .venv
+.logs

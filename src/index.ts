@@ -24,14 +24,52 @@ import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
 import { fileURLToPath } from "url";
 
+// Logging setup
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+interface Logger {
+  debug: (message: string) => Promise<void>;
+  info: (message: string) => Promise<void>;
+  warn: (message: string) => Promise<void>;
+  error: (message: string) => Promise<void>;
+}
+
+let logger: Logger | null = null;
+
+const setupLogging = async (): Promise<Logger> => {
+  if (logger) return logger;
+  
+  const logsDir = path.join(projectRootDir, ".logs");
+  try {
+    await fs.access(logsDir);
+  } catch {
+    await fs.mkdir(logsDir, { recursive: true });
+  }
+  
+  const today = new Date().toISOString().split('T')[0];
+  const logFile = path.join(logsDir, `${today}.log`);
+  
+  const logWithLevel = async (message: string, level: LogLevel) => {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
+    await fs.appendFile(logFile, logMessage);
+  };
+  
+  logger = {
+    debug: (message: string) => logWithLevel(message, 'debug'),
+    info: (message: string) => logWithLevel(message, 'info'),
+    warn: (message: string) => logWithLevel(message, 'warn'),
+    error: (message: string) => logWithLevel(message, 'error'),
+  };
+  
+  return logger;
+};
+
 const execAsync = promisify(exec);
 // init
 const baseDir = process.cwd();
 const targetDir = process.argv[2] || ".";
 const projectRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-console.log(projectRootDir);
-console.log(baseDir);
-console.log(targetDir);
 
 // db
 const pglite = new PGlite({
@@ -212,10 +250,9 @@ const processFile = async (params: {
   relativePath: string;
   type: "add" | "change";
 }) => {
+  const log = await setupLogging();
   // start
-  console.log(
-    `[${params.type.toUpperCase()}]: START -> ${params.relativePath}`,
-  );
+  await log.debug(`[${params.type.toUpperCase()}]: START -> ${params.relativePath}`);
   const fileBuffer = await fs.readFile(params.absolutePath);
   const fileType = await detectFileType(fileBuffer);
   const fileHash = createHash("sha256").update(fileBuffer).digest("hex");
@@ -232,7 +269,7 @@ const processFile = async (params: {
     );
 
   if (existingFile) {
-    console.log(`[SKIP] ${params.relativePath}`);
+    await log.debug(`[SKIP] ${params.relativePath}`);
   } else {
     const processor = fileProcessors[fileType];
     const fileContent = await processor.getContent({
@@ -242,7 +279,7 @@ const processFile = async (params: {
     });
 
     if (fileContent === null) {
-      console.log(`[SKIP] Failed to get content for ${params.relativePath}`);
+      await log.warn(`[SKIP] Failed to get content for ${params.relativePath}`);
       return;
     }
 
@@ -274,9 +311,7 @@ const processFile = async (params: {
           eq(filesTable.path, params.relativePath),
         ),
       });
-    console.log(
-      `[${params.type.toUpperCase()}]: END -> ${params.relativePath}`,
-    );
+    await log.debug(`[${params.type.toUpperCase()}]: END -> ${params.relativePath}`);
   }
 };
 
@@ -349,12 +384,16 @@ const cleanupNonExistentFiles = async (
 
 // main
 const main = async () => {
+  const log = await setupLogging();
+  await log.info("Starting Local Rag server...");
+  
   await runMigration();
   const watchDir = path.isAbsolute(targetDir)
     ? targetDir
     : path.resolve(baseDir, targetDir);
 
   const parentHash = getHash(watchDir);
+  await log.info(`Watching directory: ${watchDir}`);
 
   const server = new McpServer({
     name: "Local Rag",
@@ -541,8 +580,10 @@ const main = async () => {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  await log.info("Server connected successfully");
 
   await cleanupNonExistentFiles(watchDir, parentHash);
+  await log.info("Cleanup completed");
 
   const watcher = chokidar.watch(watchDir, {
     ignored: (path, stats) => !!stats?.isFile() && shouldIgnoreFile(path),
@@ -551,16 +592,21 @@ const main = async () => {
   watcher
     .on("add", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
+      await log.info(`File added: ${relativePath}`);
       queueFile({ parentHash, absolutePath, relativePath, type: "add" });
     })
     .on("change", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
+      await log.info(`File changed: ${relativePath}`);
       queueFile({ parentHash, absolutePath, relativePath, type: "change" });
     })
     .on("unlink", async (absolutePath) => {
       const relativePath = absolutePath.slice(watchDir.length + 1);
+      await log.info(`File removed: ${relativePath}`);
       queueFile({ parentHash, absolutePath, relativePath, type: "unlink" });
     });
+    
+  await log.info("File watcher initialized");
 };
 
 main();
