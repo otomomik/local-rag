@@ -16,13 +16,12 @@ import {
   like,
   sql,
 } from "drizzle-orm";
-import { LMStudioClient } from "@lmstudio/sdk";
-import { fileTypeFromBuffer } from "file-type";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { z } from "zod";
+import { fileTypeFromBuffer } from "file-type";
 
 const execAsync = promisify(exec);
 // init
@@ -35,9 +34,6 @@ const pglite = new PGlite({
   extensions: { vector: pgVector },
 });
 const dbClient = drizzle(pglite);
-
-// lmstudio
-const lmstudio = new LMStudioClient();
 
 export const runMigration = async () => {
   await dbClient.execute("CREATE EXTENSION IF NOT EXISTS vector");
