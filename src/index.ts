@@ -343,7 +343,9 @@ const removeFile = async (params: {
   absolutePath: string;
   relativePath: string;
 }) => {
-  console.log(`[REMOVE] ${params.relativePath}`);
+  const log = await setupLogging();
+
+  await log.debug(`[REMOVE] ${params.relativePath}`);
   await dbClient
     .delete(filesTable)
     .where(
@@ -366,6 +368,8 @@ const cleanupNonExistentFiles = async (
   watchDir: string,
   parentHash: string,
 ) => {
+  const log = await setupLogging();
+
   const files = await dbClient
     .select()
     .from(filesTable)
@@ -376,7 +380,7 @@ const cleanupNonExistentFiles = async (
     try {
       await fs.access(absolutePath);
     } catch {
-      console.log(`[CLEANUP] Removing non-existent file: ${file.path}`);
+      await log.debug(`[CLEANUP] Removing non-existent file: ${file.path}`);
       await dbClient
         .delete(filesTable)
         .where(
@@ -414,6 +418,8 @@ const main = async () => {
       path: z.string().optional().default(""),
     },
     async ({ path }) => {
+      const log = await setupLogging();
+      await log.debug(`[TOOL] list-files called with path: ${path}`);
       const files = await dbClient
         .select()
         .from(filesTable)
@@ -424,6 +430,7 @@ const main = async () => {
           ),
         );
 
+      await log.debug(`[TOOL] list-files found ${files.length} files`);
       return {
         content: [
           {
@@ -442,6 +449,8 @@ const main = async () => {
       path: z.string(),
     },
     async ({ path }) => {
+      const log = await setupLogging();
+      await log.debug(`[TOOL] get-file called with path: ${path}`);
       const [file] = await dbClient
         .select()
         .from(filesTable)
@@ -449,6 +458,7 @@ const main = async () => {
           and(eq(filesTable.parentHash, parentHash), eq(filesTable.path, path)),
         );
       if (!file) {
+        await log.warn(`[TOOL] get-file: File not found: ${path}`);
         return {
           isError: true,
           content: [
@@ -460,6 +470,7 @@ const main = async () => {
         };
       }
 
+      await log.debug(`[TOOL] get-file: Successfully retrieved file: ${path}`);
       return {
         content: [
           {
@@ -480,6 +491,10 @@ const main = async () => {
       offset: z.number().optional().default(0),
     },
     async ({ query, limit, offset }) => {
+      const log = await setupLogging();
+      await log.debug(
+        `[TOOL] search-files-vector called with query: "${query}", limit: ${limit}, offset: ${offset}`,
+      );
       const embedding = await getEmbedding(
         query,
         "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
@@ -500,6 +515,9 @@ const main = async () => {
         .limit(limit)
         .offset(offset);
 
+      await log.debug(
+        `[TOOL] search-files-vector found ${files.length} results`,
+      );
       return {
         content: [
           {
@@ -522,6 +540,10 @@ const main = async () => {
       offset: z.number().optional().default(0),
     },
     async ({ query, limit, offset }) => {
+      const log = await setupLogging();
+      await log.debug(
+        `[TOOL] search-files-full-text called with query: "${query}", limit: ${limit}, offset: ${offset}`,
+      );
       const files = await dbClient
         .select()
         .from(filesTable)
@@ -534,6 +556,9 @@ const main = async () => {
         .limit(limit)
         .offset(offset);
 
+      await log.debug(
+        `[TOOL] search-files-full-text found ${files.length} results`,
+      );
       return {
         content: [
           {
@@ -556,6 +581,10 @@ const main = async () => {
       offset: z.number().optional().default(0),
     },
     async ({ query, vectorWeight, textWeight, limit, offset }) => {
+      const log = await setupLogging();
+      await log.debug(
+        `[TOOL] search-files-hybrid called with query: "${query}", vectorWeight: ${vectorWeight}, textWeight: ${textWeight}, limit: ${limit}, offset: ${offset}`,
+      );
       const embedding = await getEmbedding(
         query,
         "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
@@ -579,6 +608,9 @@ const main = async () => {
         .limit(limit)
         .offset(offset);
 
+      await log.debug(
+        `[TOOL] search-files-hybrid found ${results.length} results`,
+      );
       return {
         content: [
           {
@@ -596,7 +628,6 @@ const main = async () => {
       };
     },
   );
-
   const transport = new StdioServerTransport();
   await server.connect(transport);
   await log.info("Server connected successfully");

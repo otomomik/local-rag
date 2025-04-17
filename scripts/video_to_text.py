@@ -28,7 +28,7 @@ messages = [
             {
                 "type": "video",
                 "video": input,
-                "max_pixels": 224*224,  # Default value
+                "max_pixels": 224 * 224,  # Default value
                 "fps": 1.0,  # Default value
             },
             {"type": "text", "text": prompt},
@@ -49,9 +49,7 @@ inputs = processor(
     return_tensors="pt",
 )
 input_ids = mx.array(inputs["input_ids"])
-pixel_values = inputs.get(
-    "pixel_values_videos", inputs.get("pixel_values", None)
-)
+pixel_values = inputs.get("pixel_values_videos", inputs.get("pixel_values", None))
 if pixel_values is None:
     raise ValueError("Please provide a valid video or image input.")
 pixel_values = mx.array(pixel_values)

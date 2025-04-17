@@ -5,7 +5,7 @@
     "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "fmt": "prettier --write . --ignore-path .gitignore"
+    "fmt": "prettier --write . --ignore-path .gitignore && uvx ruff format ./scripts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.2.17",
