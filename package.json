@@ -2,6 +2,7 @@
   "name": "local-rag",
   "type": "module",
   "scripts": {
+    "inspect": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "fmt": "prettier --write . --ignore-path .gitignore"

@@ -22,15 +22,20 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import { z } from "zod";
 import { fileTypeFromBuffer } from "file-type";
+import { fileURLToPath } from "url";
 
 const execAsync = promisify(exec);
 // init
-const baseDir = process.argv[2];
-const targetDir = process.argv[3];
+const baseDir = process.cwd();
+const targetDir = process.argv[2] || ".";
+const projectRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+console.log(projectRootDir);
+console.log(baseDir);
+console.log(targetDir);
 
 // db
 const pglite = new PGlite({
-  dataDir: "./.pglite",
+  dataDir: path.join(projectRootDir, ".pglite"),
   extensions: { vector: pgVector },
 });
 const dbClient = drizzle(pglite);
@@ -38,7 +43,7 @@ const dbClient = drizzle(pglite);
 export const runMigration = async () => {
   await dbClient.execute("CREATE EXTENSION IF NOT EXISTS vector");
   await migrate(dbClient, {
-    migrationsFolder: "./drizzle",
+    migrationsFolder: path.join(projectRootDir, "drizzle"),
   });
 };
 
@@ -94,9 +99,7 @@ interface FileProcessor {
   }) => Promise<string | null>;
 }
 
-interface FileProcessors {
-  [key: string]: FileProcessor;
-}
+type FileProcessors = Record<FileType, FileProcessor>;
 
 const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   const fileType = await fileTypeFromBuffer(buffer);
@@ -116,7 +119,7 @@ const getEmbedding = async (
   modelName: string,
 ): Promise<number[]> => {
   const { stdout } = await execAsync(
-    `./scripts/text-to-vector.sh "${content}" "${modelName}"`,
+    `"${path.join(projectRootDir, "scripts/text-to-vector.sh")}" "${content}" "${modelName}"`,
   );
 
   return JSON.parse(stdout);
@@ -138,7 +141,7 @@ const fileProcessors: FileProcessors = {
       const prompt =
         "あなたは画像を説明するAIです。この画像について詳しく説明してください。";
       const { stdout } = await execAsync(
-        `./scripts/image_to_text.sh "${absolutePath}" "${modelName}" "${prompt}"`,
+        `"${path.join(projectRootDir, "scripts/image_to_text.sh")}" "${absolutePath}" "${modelName}" "${prompt}"`,
       );
       return stdout;
     },
@@ -149,7 +152,7 @@ const fileProcessors: FileProcessors = {
       const prompt =
         "あなたは動画を説明するAIです。この動画ついて詳しく説明してください。";
       const { stdout } = await execAsync(
-        `./scripts/video_to_text.sh "${absolutePath}" "${modelName}" "${prompt}"`,
+        `"${path.join(projectRootDir, "scripts/video_to_text.sh")}" "${absolutePath}" "${modelName}" "${prompt}"`,
       );
       return stdout;
     },
@@ -158,7 +161,7 @@ const fileProcessors: FileProcessors = {
     getContent: async ({ absolutePath }) => {
       const modelName = "mlx-community/whisper-large-v3-turbo";
       const { stdout } = await execAsync(
-        `./scripts/audio-to-text.sh ${absolutePath} ${modelName}`,
+        `"${path.join(projectRootDir, "scripts/audio-to-text.sh")}" "${absolutePath}" "${modelName}"`,
       );
 
       return stdout;
@@ -560,6 +563,4 @@ const main = async () => {
     });
 };
 
-if (!!baseDir && !!targetDir) {
-  main();
-}
+main();
