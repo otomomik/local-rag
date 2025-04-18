@@ -1,16 +1,26 @@
-import { dbClient, filesTable, fileChunksTable } from "../db";
+import { dbClient, filesTable, fileChunksTable } from "../db.js";
 import { and, eq } from "drizzle-orm";
-import {
-  getHash,
-  fileProcessors,
-  getEmbedding,
-  splitIntoChunks,
-} from "../utils/file";
-import { detectFileType } from "../utils/mime";
-import { Logger } from "../utils/logger";
-import { modelConfig } from "../config";
+import { Logger } from "../utils/logger.js";
+import { fileConfig, scriptConfig } from "../config.js";
 import path from "path";
 import fs from "fs/promises";
+import { exec } from "child_process";
+import { promisify } from "util";
+import { getHash } from "../utils/hash.js";
+import { detectFileType } from "../utils/mime.js";
+import { fileProcessors } from "../utils/file.js";
+
+const execAsync = promisify(exec);
+
+export type FileType =
+  | "text"
+  | "html"
+  | "pdf"
+  | "document"
+  | "image"
+  | "video"
+  | "audio"
+  | "other";
 
 export interface FileOperationParams {
   parentHash: string;
@@ -20,6 +30,30 @@ export interface FileOperationParams {
 
 export class FileService {
   constructor(private logger: Logger) {}
+
+  private splitIntoChunks(text: string): string[] {
+    const chunks: string[] = [];
+    const words = text.split(/\s+/);
+    let currentChunk: string[] = [];
+    let currentLength = 0;
+
+    for (const word of words) {
+      if (currentLength + word.length > fileConfig.chunkSize) {
+        chunks.push(currentChunk.join(" "));
+        currentChunk = [word];
+        currentLength = word.length;
+      } else {
+        currentChunk.push(word);
+        currentLength += word.length + 1;
+      }
+    }
+
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk.join(" "));
+    }
+
+    return chunks;
+  }
 
   async processFile(
     params: FileOperationParams & { type: "add" | "change" },
@@ -107,9 +141,14 @@ export class FileService {
     params: FileOperationParams,
     fileContent: string,
   ): Promise<void> {
-    const chunks = splitIntoChunks(fileContent);
+    const chunks = this.splitIntoChunks(fileContent);
     const chunkVectors = await Promise.all(
-      chunks.map((chunk) => getEmbedding(chunk, modelConfig.embeddingModel)),
+      chunks.map(async (chunk) => {
+        const { stdout } = await execAsync(
+          `${scriptConfig.textToVector} "${chunk}"`,
+        );
+        return JSON.parse(stdout) as number[];
+      }),
     );
 
     // Delete existing chunks

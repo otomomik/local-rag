@@ -36,7 +36,7 @@ export const getEmbedding = async (
   modelName: string = modelConfig.embeddingModel,
 ): Promise<number[]> => {
   const { stdout } = await execAsync(
-    `"${scriptConfig.textToVector}" "${content.replace(/"/g, '\\"').replace(/`/g, '\\`')}" "${modelName}"`,
+    `"${scriptConfig.textToVector}" "${content.replace(/"/g, '\\"').replace(/`/g, "\\`")}" "${modelName}"`,
   );
 
   return JSON.parse(stdout);
