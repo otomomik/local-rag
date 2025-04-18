@@ -95,6 +95,21 @@ export const filesTable = pgTable(
     path: text("path").notNull(),
     contentHash: text("content_hash").notNull(),
     content: text("content").notNull(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.parentHash, t.path],
+    }),
+  ],
+);
+
+export const fileChunksTable = pgTable(
+  "file_chunks",
+  {
+    parentHash: text("parent_hash").notNull(),
+    filePath: text("file_path").notNull(),
+    chunkIndex: text("chunk_index").notNull(),
+    content: text("content").notNull(),
     contentVector: vector("content_vector", {
       dimensions: 1024,
     }).notNull(),
@@ -102,13 +117,13 @@ export const filesTable = pgTable(
   },
   (t) => [
     primaryKey({
-      columns: [t.parentHash, t.path],
+      columns: [t.parentHash, t.filePath, t.chunkIndex],
     }),
-    index("content_vector_index").using(
+    index("chunk_vector_index").using(
       "hnsw",
       t.contentVector.op("vector_cosine_ops"),
     ),
-    index("content_search_index").using(
+    index("chunk_search_index").using(
       "gin",
       sql`to_tsvector('simple', ${t.contentSearch})`,
     ),
@@ -183,7 +198,8 @@ const getEmbedding = async (
   modelName: string,
 ): Promise<number[]> => {
   const { stdout } = await execAsync(
-    `"${path.join(projectRootDir, "scripts/text-to-vector.sh")}" "${content}" "${modelName}"`,
+    // "を\"に置き換える
+    `"${path.join(projectRootDir, "scripts/text-to-vector.sh")}" "${content.replace(/"/g, '\\"')}" "${modelName}"`,
   );
 
   return JSON.parse(stdout);
@@ -280,6 +296,29 @@ const processQueue = async () => {
   }
 };
 
+const CHUNK_SIZE = 1000; // チャンクサイズ（文字数）
+const CHUNK_OVERLAP = 200; // チャンク間のオーバーラップ（文字数）
+
+const splitIntoChunks = (text: string): string[] => {
+  const chunks: string[] = [];
+  let startIndex = 0;
+
+  while (startIndex < text.length) {
+    const endIndex = Math.min(startIndex + CHUNK_SIZE, text.length);
+    const chunk = text.slice(startIndex, endIndex);
+    if (chunk.length > 0) {
+      chunks.push(chunk);
+    }
+    // 次のチャンクの開始位置を設定（オーバーラップを考慮）
+    startIndex = endIndex;
+    if (startIndex < text.length) {
+      startIndex = Math.max(0, startIndex - CHUNK_OVERLAP);
+    }
+  }
+
+  return chunks;
+};
+
 const processFile = async (params: {
   parentHash: string;
   absolutePath: string;
@@ -287,7 +326,6 @@ const processFile = async (params: {
   type: "add" | "change";
 }) => {
   const log = await setupLogging();
-  // start
   await log.debug(
     `[${params.type.toUpperCase()}]: START -> ${params.relativePath}`,
   );
@@ -321,11 +359,7 @@ const processFile = async (params: {
       return;
     }
 
-    const contentVector = await getEmbedding(
-      fileContent,
-      "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
-    );
-
+    // ファイルのメタデータを保存
     await dbClient
       .insert(filesTable)
       .values({
@@ -333,24 +367,51 @@ const processFile = async (params: {
         path: params.relativePath,
         contentHash: fileHash,
         content: fileContent,
-        contentVector,
-        contentSearch: fileContent,
       })
       .onConflictDoUpdate({
         target: [filesTable.parentHash, filesTable.path],
         set: {
           contentHash: fileHash,
           content: fileContent,
-          contentVector,
-          contentSearch: fileContent,
         },
         setWhere: and(
           eq(filesTable.parentHash, params.parentHash),
           eq(filesTable.path, params.relativePath),
         ),
       });
+
+    // チャンクの処理
+    const chunks = splitIntoChunks(fileContent);
+    const chunkVectors = await Promise.all(
+      chunks.map((chunk) =>
+        getEmbedding(chunk, "mlx-community/snowflake-arctic-embed-l-v2.0-bf16"),
+      ),
+    );
+
+    // 既存のチャンクを削除
+    await dbClient
+      .delete(fileChunksTable)
+      .where(
+        and(
+          eq(fileChunksTable.parentHash, params.parentHash),
+          eq(fileChunksTable.filePath, params.relativePath),
+        ),
+      );
+
+    // 新しいチャンクを保存
+    for (let i = 0; i < chunks.length; i++) {
+      await dbClient.insert(fileChunksTable).values({
+        parentHash: params.parentHash,
+        filePath: params.relativePath,
+        chunkIndex: i.toString(),
+        content: chunks[i],
+        contentVector: chunkVectors[i],
+        contentSearch: chunks[i],
+      });
+    }
+
     await log.debug(
-      `[${params.type.toUpperCase()}]: END -> ${params.relativePath}`,
+      `[${params.type.toUpperCase()}]: END -> ${params.relativePath} (${chunks.length} chunks)`,
     );
   }
 };
@@ -379,11 +440,22 @@ const removeFile = async (params: {
   const log = await setupLogging();
 
   await log.debug(`[REMOVE] ${params.relativePath}`);
+  // ファイルとチャンクの両方を削除
   await dbClient
     .delete(filesTable)
     .where(
-      eq(filesTable.parentHash, params.parentHash) &&
+      and(
+        eq(filesTable.parentHash, params.parentHash),
         eq(filesTable.path, params.relativePath),
+      ),
+    );
+  await dbClient
+    .delete(fileChunksTable)
+    .where(
+      and(
+        eq(fileChunksTable.parentHash, params.parentHash),
+        eq(fileChunksTable.filePath, params.relativePath),
+      ),
     );
 };
 
@@ -480,38 +552,89 @@ const main = async () => {
     "get file content",
     {
       path: z.string(),
+      chunkIndex: z.string().optional(),
     },
-    async ({ path }) => {
+    async ({ path, chunkIndex }) => {
       const log = await setupLogging();
-      await log.debug(`[TOOL] get-file called with path: ${path}`);
-      const [file] = await dbClient
-        .select()
-        .from(filesTable)
-        .where(
-          and(eq(filesTable.parentHash, parentHash), eq(filesTable.path, path)),
+      await log.debug(
+        `[TOOL] get-file called with path: ${path}, chunkIndex: ${chunkIndex}`,
+      );
+
+      if (chunkIndex) {
+        // チャンクを取得
+        const [chunk] = await dbClient
+          .select()
+          .from(fileChunksTable)
+          .where(
+            and(
+              eq(fileChunksTable.parentHash, parentHash),
+              eq(fileChunksTable.filePath, path),
+              eq(fileChunksTable.chunkIndex, chunkIndex),
+            ),
+          );
+
+        if (!chunk) {
+          await log.warn(
+            `[TOOL] get-file: Chunk not found: ${path}#chunk${chunkIndex}`,
+          );
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: "Chunk not found",
+              },
+            ],
+          };
+        }
+
+        await log.debug(
+          `[TOOL] get-file: Successfully retrieved chunk: ${path}#chunk${chunkIndex}`,
         );
-      if (!file) {
-        await log.warn(`[TOOL] get-file: File not found: ${path}`);
         return {
-          isError: true,
           content: [
             {
               type: "text",
-              text: "File not found",
+              text: chunk.content,
+            },
+          ],
+        };
+      } else {
+        // ファイル全体を取得（従来の動作）
+        const [file] = await dbClient
+          .select()
+          .from(filesTable)
+          .where(
+            and(
+              eq(filesTable.parentHash, parentHash),
+              eq(filesTable.path, path),
+            ),
+          );
+        if (!file) {
+          await log.warn(`[TOOL] get-file: File not found: ${path}`);
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: "File not found",
+              },
+            ],
+          };
+        }
+
+        await log.debug(
+          `[TOOL] get-file: Successfully retrieved file: ${path}`,
+        );
+        return {
+          content: [
+            {
+              type: "text",
+              text: file.content,
             },
           ],
         };
       }
-
-      await log.debug(`[TOOL] get-file: Successfully retrieved file: ${path}`);
-      return {
-        content: [
-          {
-            type: "text",
-            text: file.content,
-          },
-        ],
-      };
     },
   );
 
@@ -532,31 +655,34 @@ const main = async () => {
         query,
         "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
       );
-      const fileColumns = getTableColumns(filesTable);
-      const files = await dbClient
+      const chunkColumns = getTableColumns(fileChunksTable);
+      const chunks = await dbClient
         .select({
-          ...fileColumns,
-          similarity: sql<number>`1 - (${cosineDistance(filesTable.contentVector, embedding)})`,
+          ...chunkColumns,
+          similarity: sql<number>`1 - (${cosineDistance(fileChunksTable.contentVector, embedding)})`,
         })
-        .from(filesTable)
-        .where(eq(filesTable.parentHash, parentHash))
+        .from(fileChunksTable)
+        .where(eq(fileChunksTable.parentHash, parentHash))
         .orderBy(
           desc(
-            sql<number>`1 - (${cosineDistance(filesTable.contentVector, embedding)})`,
+            sql<number>`1 - (${cosineDistance(fileChunksTable.contentVector, embedding)})`,
           ),
         )
         .limit(limit)
         .offset(offset);
 
       await log.debug(
-        `[TOOL] search-files-vector found ${files.length} results`,
+        `[TOOL] search-files-vector found ${chunks.length} results`,
       );
       return {
         content: [
           {
             type: "text",
-            text: files
-              .map((file) => `${file.path} (${file.similarity.toFixed(3)})`)
+            text: chunks
+              .map(
+                (chunk) =>
+                  `${chunk.filePath}#chunk${chunk.chunkIndex} (${chunk.similarity.toFixed(3)})`,
+              )
               .join("\n"),
           },
         ],
@@ -577,26 +703,28 @@ const main = async () => {
       await log.debug(
         `[TOOL] search-files-full-text called with query: "${query}", limit: ${limit}, offset: ${offset}`,
       );
-      const files = await dbClient
+      const chunks = await dbClient
         .select()
-        .from(filesTable)
+        .from(fileChunksTable)
         .where(
           and(
-            eq(filesTable.parentHash, parentHash),
-            sql`to_tsvector('simple', ${filesTable.contentSearch}) @@ plainto_tsquery('simple', ${query})`,
+            eq(fileChunksTable.parentHash, parentHash),
+            sql`to_tsvector('simple', ${fileChunksTable.contentSearch}) @@ plainto_tsquery('simple', ${query})`,
           ),
         )
         .limit(limit)
         .offset(offset);
 
       await log.debug(
-        `[TOOL] search-files-full-text found ${files.length} results`,
+        `[TOOL] search-files-full-text found ${chunks.length} results`,
       );
       return {
         content: [
           {
             type: "text",
-            text: files.map((file) => `${file.path}`).join("\n"),
+            text: chunks
+              .map((chunk) => `${chunk.filePath}#chunk${chunk.chunkIndex}`)
+              .join("\n"),
           },
         ],
       };
@@ -622,20 +750,20 @@ const main = async () => {
         query,
         "mlx-community/snowflake-arctic-embed-l-v2.0-bf16",
       );
-      const fileColumns = getTableColumns(filesTable);
+      const chunkColumns = getTableColumns(fileChunksTable);
 
       const results = await dbClient
         .select({
-          ...fileColumns,
-          vectorSimilarity: sql<number>`1 - (${cosineDistance(filesTable.contentVector, embedding)})`,
-          textRank: sql<number>`ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query}))`,
+          ...chunkColumns,
+          vectorSimilarity: sql<number>`1 - (${cosineDistance(fileChunksTable.contentVector, embedding)})`,
+          textRank: sql<number>`ts_rank(to_tsvector('simple', ${fileChunksTable.contentSearch}), plainto_tsquery('simple', ${query}))`,
         })
-        .from(filesTable)
-        .where(eq(filesTable.parentHash, parentHash))
+        .from(fileChunksTable)
+        .where(eq(fileChunksTable.parentHash, parentHash))
         .orderBy(
           desc(
-            sql<number>`(${vectorWeight} * (1 - (${cosineDistance(filesTable.contentVector, embedding)})) + 
-                     ${textWeight} * ts_rank(to_tsvector('simple', ${filesTable.contentSearch}), plainto_tsquery('simple', ${query})))`,
+            sql<number>`(${vectorWeight} * (1 - (${cosineDistance(fileChunksTable.contentVector, embedding)})) + 
+                     ${textWeight} * ts_rank(to_tsvector('simple', ${fileChunksTable.contentSearch}), plainto_tsquery('simple', ${query})))`,
           ),
         )
         .limit(limit)
@@ -649,11 +777,11 @@ const main = async () => {
           {
             type: "text",
             text: results
-              .map((file) => {
+              .map((chunk) => {
                 const combinedScore =
-                  vectorWeight * file.vectorSimilarity +
-                  textWeight * file.textRank;
-                return `${file.path} (${combinedScore.toFixed(3)})`;
+                  vectorWeight * chunk.vectorSimilarity +
+                  textWeight * chunk.textRank;
+                return `${chunk.filePath}#chunk${chunk.chunkIndex} (${combinedScore.toFixed(3)})`;
               })
               .join("\n"),
           },

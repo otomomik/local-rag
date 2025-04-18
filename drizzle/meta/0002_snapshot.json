@@ -1,0 +1,169 @@
+{
+  "id": "e1193119-861e-4843-84bb-b86ba1e38051",
+  "prevId": "234f597a-0ee5-4cb5-b6cc-cfbe28bb0fc5",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.file_chunks": {
+      "name": "file_chunks",
+      "schema": "",
+      "columns": {
+        "parent_hash": {
+          "name": "parent_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "file_path": {
+          "name": "file_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chunk_index": {
+          "name": "chunk_index",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_vector": {
+          "name": "content_vector",
+          "type": "vector(1024)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_search": {
+          "name": "content_search",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "chunk_vector_index": {
+          "name": "chunk_vector_index",
+          "columns": [
+            {
+              "expression": "content_vector",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last",
+              "opclass": "vector_cosine_ops"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "hnsw",
+          "with": {}
+        },
+        "chunk_search_index": {
+          "name": "chunk_search_index",
+          "columns": [
+            {
+              "expression": "to_tsvector('simple', \"content_search\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "file_chunks_parent_hash_file_path_chunk_index_pk": {
+          "name": "file_chunks_parent_hash_file_path_chunk_index_pk",
+          "columns": ["parent_hash", "file_path", "chunk_index"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.files": {
+      "name": "files",
+      "schema": "",
+      "columns": {
+        "parent_hash": {
+          "name": "parent_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "path": {
+          "name": "path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_search": {
+          "name": "content_search",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "content_search_index": {
+          "name": "content_search_index",
+          "columns": [
+            {
+              "expression": "to_tsvector('simple', \"content_search\")",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "files_parent_hash_path_pk": {
+          "name": "files_parent_hash_path_pk",
+          "columns": ["parent_hash", "path"]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {},
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}
