@@ -2,11 +2,11 @@
 
 # 実行するディレクトリに移動
 cd $(dirname $0) > /dev/null
+CONTENT="$1"
+MODEL_NAME="$2"
 
-input_file=$1
-
-if [ -z "$input_file" ]; then
-  echo "Usage: $0 <input_file>"
+if [ -z "$CONTENT" ] || [ -z "$MODEL_NAME" ]; then
+  echo "Usage: $0 \"<content>\" \"<model_name>\""
   exit 1
 fi
 
@@ -26,4 +26,4 @@ if $is_first_run; then
 fi
 
 # ファイルを処理
-python document-to-markdown.py $input_file
+python text_to_vector.py "$CONTENT" "$MODEL_NAME"

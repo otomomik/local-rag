@@ -2,3 +2,4 @@ mlx-whisper==0.4.2
 mlx-embeddings==0.0.3
 mlx-vlm==0.1.23
 markitdown[all]==0.1.1
+markdownify==1.1.0

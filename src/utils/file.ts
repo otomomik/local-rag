@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
-import { FileType, detectFileType } from "./mime";
+import { FileType } from "./mime";
 import { fileConfig, modelConfig, scriptConfig } from "../config";
 
 const execAsync = promisify(exec);
@@ -36,7 +36,7 @@ export const getEmbedding = async (
   modelName: string = modelConfig.embeddingModel,
 ): Promise<number[]> => {
   const { stdout } = await execAsync(
-    `"${scriptConfig.textToVector}" "${content.replace(/"/g, '\\"')}" "${modelName}"`,
+    `"${scriptConfig.textToVector}" "${content.replace(/"/g, '\\"').replace(/`/g, '\\`')}" "${modelName}"`,
   );
 
   return JSON.parse(stdout);
@@ -46,6 +46,14 @@ export const fileProcessors: FileProcessors = {
   text: {
     getContent: async ({ buffer }) => {
       return buffer.toString("utf8");
+    },
+  },
+  html: {
+    getContent: async ({ absolutePath }) => {
+      const { stdout } = await execAsync(
+        `"${scriptConfig.htmlToMarkdown}" "${absolutePath}"`,
+      );
+      return stdout;
     },
   },
   pdf: {

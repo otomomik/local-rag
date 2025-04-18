@@ -46,12 +46,13 @@ export const modelConfig = {
 
 // スクリプト関連の設定
 export const scriptConfig = {
-  textToVector: path.join(projectRootDir, "scripts/text-to-vector.sh"),
+  textToVector: path.join(projectRootDir, "scripts/text_to_vector.sh"),
   documentToMarkdown: path.join(
     projectRootDir,
-    "scripts/document-to-markdown.sh",
+    "scripts/document_to_markdown.sh",
   ),
+  htmlToMarkdown: path.join(projectRootDir, "scripts/html_to_markdown.sh"),
   imageToText: path.join(projectRootDir, "scripts/image_to_text.sh"),
   videoToText: path.join(projectRootDir, "scripts/video_to_text.sh"),
-  audioToText: path.join(projectRootDir, "scripts/audio-to-text.sh"),
+  audioToText: path.join(projectRootDir, "scripts/audio_to_text.sh"),
 };
