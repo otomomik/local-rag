@@ -56,12 +56,6 @@ export const fileProcessors: FileProcessors = {
       return stdout;
     },
   },
-  pdf: {
-    getContent: async ({ buffer }) => {
-      // TODO: Implement PDF text extraction
-      return buffer.toString("utf8");
-    },
-  },
   document: {
     getContent: async ({ absolutePath }) => {
       const { stdout } = await execAsync(

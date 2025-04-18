@@ -3,7 +3,6 @@ import { fileTypeFromBuffer } from "file-type";
 export type FileType =
   | "text"
   | "html"
-  | "pdf"
   | "document"
   | "image"
   | "video"
@@ -14,7 +13,6 @@ export type FileType =
 export const isImage = (mime: string): boolean => mime.startsWith("image/");
 export const isVideo = (mime: string): boolean => mime.startsWith("video/");
 export const isAudio = (mime: string): boolean => mime.startsWith("audio/");
-export const isPdf = (mime: string): boolean => mime === "application/pdf";
 const isText = (buffer: Buffer): boolean => {
   const sampleSize = 1000;
   const threshold = 0.1;
@@ -65,6 +63,7 @@ const isHtml = (buffer: Buffer): boolean => {
   );
 };
 export const isDocument = (mime: string): boolean =>
+  mime === "application/pdf" || // PDF
   mime ===
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || // Excel
   mime ===
@@ -78,18 +77,6 @@ export const isDocument = (mime: string): boolean =>
 export const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   const fileType = await fileTypeFromBuffer(buffer);
   const mimeType = fileType?.mime ?? "";
-
-  if (isHtml(buffer)) {
-    return "html";
-  }
-
-  if (isText(buffer)) {
-    return "text";
-  }
-
-  if (isPdf(mimeType)) {
-    return "pdf";
-  }
 
   if (isDocument(mimeType)) {
     return "document";
@@ -106,6 +93,15 @@ export const detectFileType = async (buffer: Buffer): Promise<FileType> => {
   if (isAudio(mimeType)) {
     return "audio";
   }
+
+  if (isHtml(buffer)) {
+    return "html";
+  }
+
+  if (isText(buffer)) {
+    return "text";
+  }
+
 
   return "other";
 };

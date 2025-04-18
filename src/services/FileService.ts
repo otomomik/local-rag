@@ -1,7 +1,7 @@
 import { dbClient, filesTable, fileChunksTable } from "../db.js";
 import { and, eq } from "drizzle-orm";
 import { Logger } from "../utils/logger.js";
-import { fileConfig, scriptConfig } from "../config.js";
+import { fileConfig, modelConfig, scriptConfig } from "../config.js";
 import path from "path";
 import fs from "fs/promises";
 import { exec } from "child_process";
@@ -145,7 +145,7 @@ export class FileService {
     const chunkVectors = await Promise.all(
       chunks.map(async (chunk) => {
         const { stdout } = await execAsync(
-          `${scriptConfig.textToVector} "${chunk}"`,
+          `${scriptConfig.textToVector} "${chunk}" "${modelConfig.embeddingModel}"`,
         );
         return JSON.parse(stdout) as number[];
       }),
